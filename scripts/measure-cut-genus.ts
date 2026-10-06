@@ -12,9 +12,11 @@ import type { ZoneSidecar } from '../src/geometry/zoneCharts';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ZONE = process.argv[2] ?? 'left';
-const DEPTH = Number(process.argv[3] ?? 1);
 const SIZE_MM = 700; // bigger than the largest zone, so the square covers all of it
 
+const { toFiniteNumber } = await import('../src/util/number');
+const DEPTH = toFiniteNumber(process.argv[3] ?? '1');
+if (DEPTH == null || DEPTH <= 0) throw new Error(`depth "${process.argv[3]}" isn't a depth in mm`);
 const { buildAssemblyGeometry } = await import('../src/geometry/assembly');
 const { reconstructChart } = await import('../src/geometry/zoneCharts');
 const { getManifold, soupToManifold } = await import('../src/geometry/manifold');
@@ -114,14 +116,22 @@ console.log(`\nZone "${ZONE}" cut ${DEPTH}mm deep; solids are pieces over 1mm³\
 console.log('part                        genus     solids   slivers');
 console.log('-'.repeat(56));
 for (const part of parts) {
-  const out = build.partOutputs.find((o) => o.part.id === part.id)!;
+  const out = build.partOutputs.find((o) => o.part.id === part.id);
+  if (!out) {
+    console.log(`${part.name.padEnd(26)} no output from the build`);
+    continue;
+  }
   const before = soupToManifold(wasm, part.positions!);
   const after = soupToManifold(wasm, out.bodySoup);
   const pieces = after.decompose();
   const solids = pieces.filter((p) => Math.abs(p.volume()) > 1);
-  const main = pieces.reduce((a, b) => (b.volume() > a.volume() ? b : a));
+  const main = pieces.reduce<(typeof pieces)[number] | null>(
+    (a, b) => (!a || b.volume() > a.volume() ? b : a),
+    null,
+  );
+  const genus = main ? `${before.genus()} -> ${main.genus()}` : `${before.genus()} -> empty`;
   console.log(
-    `${part.name.padEnd(26)} ${`${before.genus()} -> ${main.genus()}`.padEnd(9)} ${String(solids.length).padStart(6)}   ${String(pieces.length - solids.length).padStart(7)}`,
+    `${part.name.padEnd(26)} ${genus.padEnd(9)} ${String(solids.length).padStart(6)}   ${String(pieces.length - solids.length).padStart(7)}`,
   );
   for (const p of pieces) p.delete();
   before.delete();
