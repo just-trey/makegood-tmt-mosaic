@@ -104,6 +104,26 @@ says "It was cut at … mm instead".
 
 **Closing it** means staging the clamp only for a region whose cutter was kept.
 
+## Cutting the chair's left fender adds handles to it at the default depth
+
+A design over the whole left side, cut 1mm deep, raises chair-wing-left's genus from 0 to 4 and leaves
+4 zero-volume pieces beside it. A recess should change neither. The other three left parts keep their
+genus. Run `node_modules/.bin/vite-node scripts/measure-cut-genus.ts [zone] [depthMm]`:
+
+| Depth | chair-wing-left genus | zero-volume pieces |
+| ----- | --------------------- | ------------------ |
+| 1mm   | 0 -> 4                | 4                  |
+| 3mm   | 0 -> 5                | 5                  |
+
+- Still one solid over 1mm³ at both depths, so no piece is cut off.
+- Whether the handles print as anything is **unmeasured**: they could be slivers on the surface or
+  real tunnels. The other zones are unmeasured too.
+- Probably not the depth: at the 3.35mm wall clamp this part's cutter had as much volume outside
+  the part as at 1mm. That came from a throwaway script and can't be reproduced.
+
+**Closing it** means finding where the handles sit (`decompose` the cut body, then compare the cutter
+with the part around them) and deciding whether the warp or the boolean makes them.
+
 ## Rebuild performance needs ongoing work — this is a heavy application
 
 The flat-mode half closed 2026-08-23. `computeNetRegionsByColor` now calls the clipping engine n-ary
