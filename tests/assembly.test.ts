@@ -2214,4 +2214,13 @@ describe('outlines whose halves cancel out', () => {
       "2 outlines cross over themselves and their halves cancel out, so they were left out. Redraw them as separate shapes that don't cross.",
     ]);
   });
+
+  it('counts a design placed twice once, since there is one outline to redraw', async () => {
+    clearWarnings();
+    const one = baseInput({ parsed: withBowTie(redSquareParsed(), 20) }).artworks[0];
+    await buildAssemblyGeometry(baseInput({ artworks: [one, { ...one, offX: 5 }] }));
+    expect(cancelWarnings()).toEqual([
+      "1 outline crosses over itself and its halves cancel out, so it was left out. Redraw it as separate shapes that don't cross.",
+    ]);
+  });
 });

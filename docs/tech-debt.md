@@ -887,6 +887,9 @@ An equal bow-tie, figure-8 or infinity sign has a net area of zero: its lobes wi
   file: Illustrator slivers drawn out and back, which the clipper's union finds empty.
 - **Unequal lobes reach the cut as one self-crossing ring**, nested by containment like any other.
   Not measured against a browser's fill.
+- **The count's cost is unmeasured.** `cancelsOut` runs one clipper union per loop under the floor,
+  synchronously after the region pass's last yield. The most loops under the floor in one corpus file
+  is 10 (same command); a file with thousands is untimed.
 - **The fill rule is not parsed.** `fill-rule` appears nowhere in [src/svg/parse.ts](../src/svg/parse.ts).
   `nonzero` and `evenodd` agree on a figure-8; they disagree on a loop that winds twice.
 

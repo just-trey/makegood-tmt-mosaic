@@ -52,7 +52,7 @@ export function loopToRing(loop: Loop, forceCCW?: boolean): Ring | null {
 }
 
 /** Net area at or below which `shapeToFeature` drops a loop, in the shape's own units. */
-const RING_AREA_FLOOR = 1e-7;
+export const RING_AREA_FLOOR = 1e-7;
 
 /**
  * A loop `shapeToFeature` drops for its net area that still draws something: an equal bow-tie or
@@ -66,7 +66,7 @@ export function cancelsOut(loop: Loop): boolean {
   try {
     return planarArea(fromGeom(polygonClipping.union([ring] as Ring[]))) > RING_AREA_FLOOR;
   } catch {
-    return true; // can't tell it was empty, and it is dropped either way
+    return false; // unresolvable, so nothing says it crosses: the warning would name the wrong cause
   }
 }
 

@@ -1043,7 +1043,8 @@ both halves.
 - Those outlines are not cut. Everything else in the design is.
 - If they were the only shapes, no colors show and Export stays off.
 - One drawn as a hole inside another shape prints filled instead.
-- The count covers every design loaded.
+- The count covers every design loaded, each file once however often it is
+  placed.
 
 Halves of different sizes import fine, as do stars and subpaths that overlap.
 A zero-width sliver (a line, or an outline traced out and back) fills nothing

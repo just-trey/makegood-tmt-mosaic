@@ -38,7 +38,7 @@ dom.window.HTMLCanvasElement.prototype.getContext = function () {
 } as unknown as typeof dom.window.HTMLCanvasElement.prototype.getContext;
 
 const { parseSVGDocument } = await import('../src/svg/parse');
-const { cancelsOut, shapeToFeature } = await import('../src/geometry/regions');
+const { RING_AREA_FLOOR, cancelsOut, shapeToFeature } = await import('../src/geometry/regions');
 const { signedArea } = await import('../src/svg/path');
 
 interface Row {
@@ -59,7 +59,7 @@ function count(source: string, shapes: SVGShape[]): Row {
     shapesGone = 0;
   for (const s of shapes) {
     loops += s.loops.length;
-    belowFloor += s.loops.filter((l) => Math.abs(signedArea(l)) <= 1e-7).length;
+    belowFloor += s.loops.filter((l) => Math.abs(signedArea(l)) <= RING_AREA_FLOOR).length;
     cancels += s.loops.filter(cancelsOut).length;
     if (!shapeToFeature(s)) shapesGone++;
   }
