@@ -402,19 +402,19 @@ comes from the traced outline's reach.
 - **Closing it** needs that measurement first. If it happens, the fix is a fit that does not read the
   trace's own specks, not a cap on re-traces.
 
-## A `deChecker` split can stay under the despeckle floor when every label makes a checkerboard
+## A `deChecker` break can still leave a piece under the despeckle floor — no grid known
 
-`clean` in [src/raster/trace.ts](../src/raster/trace.ts) absorbs what breaking a 2x2 checkerboard split
-or shaved under the floor, but only into a label that makes no new checkerboard. When every neighbouring
-label would make one, the piece stays under the floor.
+`breakChecker` in [src/raster/trace.ts](../src/raster/trace.ts) rewrites a 2x2 checkerboard's bottom-left
+cell when the bottom-right one strands a piece under the floor that no label can take. Two cases can
+still leave a piece there:
 
-- **Only a hand-built grid reaches it**: the "leaves a split piece under the floor when every label for
-  it makes a checkerboard" test in [tests/raster-trace.test.ts](../tests/raster-trace.test.ts).
-- **Nothing measured reaches it**: 0 of 24 `cap` rows and 0 of 22 corpus rows leave anything under the
-  floor, background included. Reproduce with `node_modules/.bin/vite-node scripts/bench-raster.ts cap`
-  and `... despeckle`. The corpus count is the 11 sources present; the 8 stock photos were not fetched.
-- **Closing it** needs a checkerboard break that recolours nothing over the floor, such as choosing which
-  of the 2x2's four cells `deChecker` rewrites so that it splits nothing.
+- **Both bottom cells strand one.** The bottom-left rewrite stands, and its piece stays.
+- **A later break moves the labels around a piece judged takeable.** Takeable is decided when its
+  checkerboard breaks, not when the checker-free despeckle after the scan runs.
+- **No grid known**: no test grid reaches either, and 0 of 24 `cap` rows and 0 of 38 corpus rows leave
+  anything under the floor. Reproduce with `node_modules/.bin/vite-node scripts/bench-raster.ts cap` and
+  `... despeckle`.
+- **Closing it** needs such a grid first.
 
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
