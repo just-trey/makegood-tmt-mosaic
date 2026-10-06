@@ -15,10 +15,11 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts cap         does MAX_COMPONENTS bound the count?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts floor       despeckle floor in mm, per placement
 //   node_modules/.bin/vite-node scripts/bench-raster.ts dropped     which dropped-color notice, per placement
+//   node_modules/.bin/vite-node scripts/bench-raster.ts dropped-next  does raising Detail by 20 ever cap a trace that still drops a color?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts look        write traced SVGs to look at
 //   node_modules/.bin/vite-node scripts/bench-raster.ts steps       resize that moves the floors
 //
-// corpus, colors, curve, despeckle and dropped read the cached corpus. scale, render and alpha bring their
+// corpus, colors, curve, despeckle, dropped and dropped-next read the cached corpus. scale, render and alpha bring their
 // own source.
 // sizes, blur and knee take their file list from CORPUS and decode afresh, so they need the files
 // present; knee also reads the cache for each source's carried edgeDensity.
@@ -50,6 +51,7 @@ import {
   rasterColorLossMessage,
   rasterColorLossNotice,
   rasterFullDetailColorLossMessage,
+  rasterLostColors,
   rasterSizeColorLossMessage,
 } from '../src/raster/parse';
 import type { ShapeGranularity } from '../src/raster/parse';
@@ -1244,6 +1246,53 @@ async function modeDropped(names: string[]) {
 }
 
 /**
+ * Prices the "notice knows the next step caps" fix for rasterColorLossMessage: of the traces that
+ * say "Raise Detail", how many are capped, color still dropped, 20 points up, and what a trace costs.
+ */
+async function modeDroppedNext(names: string[]) {
+  const sources = await pick(names);
+  const places = [{ name: 'none', mmPerPixel: () => 0 }, ...PLACEMENTS];
+  const STEP = 20;
+  let rows = 0,
+    raiseDetail = 0,
+    leadsNowhere = 0,
+    traces = 0,
+    ms = 0;
+  for (const s of sources) {
+    const img = { ...s.working, edgeDensity: s.edgeDensity };
+    for (const place of places) {
+      const run = (detail: number) => {
+        const t = performance.now();
+        try {
+          const r = parseRasterImage(img, {
+            colors: s.colors,
+            detail,
+            mmPerPixel: place.mmPerPixel(img),
+            name: s.name,
+          });
+          traces++;
+          ms += performance.now() - t;
+          return r;
+        } catch (e) {
+          if (!(e instanceof EmptyTraceError)) throw e;
+          return null;
+        }
+      };
+      for (let detail = 0; detail < DETAIL_MAX; detail += STEP) {
+        rows++;
+        const r = run(detail);
+        if (!r || !rasterLostColors(r)) continue;
+        raiseDetail++;
+        const next = run(detail + STEP);
+        if (next?.capped && next.droppedColors > 0) leadsNowhere++;
+      }
+    }
+  }
+  console.log({ sources: sources.length, places: places.length, rows, raiseDetail, leadsNowhere });
+  console.log({ traces, avgTraceMs: Math.round(ms / traces) });
+}
+
+/**
  * How far a placed design has to be resized before its despeckle floors move, which is when the
  * rebuild re-traces it (`retraceMovedSources`). Reads `placedFloors`, the function the app compares,
  * so the answer is the app's own. Needs no corpus: the floors read only the working size and the
@@ -1520,6 +1569,9 @@ switch (mode) {
   case 'dropped':
     await modeDropped(rest);
     break;
+  case 'dropped-next':
+    await modeDroppedNext(rest);
+    break;
   case 'look':
     await modeLook(rest);
     break;
@@ -1534,7 +1586,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
-          `sizes, blur, knee, despeckle, cap, floor, dropped, look, steps, ` +
+          `sizes, blur, knee, despeckle, cap, floor, dropped, dropped-next, look, steps, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));

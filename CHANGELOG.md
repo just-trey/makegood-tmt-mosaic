@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`bench-raster.ts dropped-next` counts raise-Detail notices whose trace 20
+  Detail points up caps with the color still dropped.** 0 of 138 on the corpus, so
+  the "Raise Detail" notice stays as it is and its tech-debt section is
+  narrowed to the measurement.
 - **The three-wave tech-debt fix campaign's round-trip measurement report**
   (`docs/findings/2026-09-24-round-trip-measurement.md`), measured against
   the 2026-08 process review baseline across all 18 merged PRs (#303-#320).
