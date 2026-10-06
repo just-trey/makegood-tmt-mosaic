@@ -220,10 +220,9 @@ function despeckle(
 }
 
 /**
- * Rewrite one cell of the A,B/B,A whose top-left is `i`: the bottom-right one, unless that strands a
- * piece under the floor that no label can take without making another and the bottom-left one does
- * not. Never the top two: either can remake an A,B/B,A the scan has passed. When both bottom cells
- * strand such a piece it stays under the floor; no grid that does this is known.
+ * Rewrite one cell of the A,B/B,A whose top-left is `i`: the bottom-right one, or the bottom-left
+ * when that strands a piece under the floor no label can take without making another. Never the top
+ * two: either can remake an A,B/B,A the scan has passed. See docs/tech-debt.md for what still stays.
  */
 function breakChecker(labels: Int16Array, w: number, h: number, minArea: number, i: number): void {
   const checkerAt = (q: number) => {
@@ -289,19 +288,16 @@ function breakChecker(labels: Int16Array, w: number, h: number, minArea: number,
   labels[i + w + 1] = b;
   if (!stuck(i + w + 1, a)) return;
   labels[i + w + 1] = a;
+  // Safe for the scan: the one passed block holding this cell is left one label down its right column.
   labels[i + w] = a;
-  if (!stuck(i + w, b)) return;
-  labels[i + w] = b;
-  labels[i + w + 1] = b;
 }
 
 /**
  * Break every 2x2 that reads A,B / B,A. Such a block puts four cracks on one lattice point with two
  * labels, and no non-arbitrary pairing exists — either choice is a self-touching ring or a
  * zero-area overlap. Removing it is cheaper than a tie-break and leaves no node above degree 3 that
- * isn't a genuine meeting of distinct regions. One scan suffices: `breakChecker` writes a bottom
- * cell, which every later block reads. The one scanned block holding the bottom-left cell is left
- * with a single label down its right column, so it cannot become A,B/B,A.
+ * isn't a genuine meeting of distinct regions. One scan suffices: `breakChecker` only writes a
+ * bottom cell, which every later block reads.
  */
 function deChecker(labels: Int16Array, w: number, h: number, minArea: number): boolean {
   let changed = false;
