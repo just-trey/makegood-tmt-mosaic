@@ -85,6 +85,12 @@ check:zone-occlusion` on the chair went from 4 "produced no interior ink
   leave a piece under the size the trace cleans to. That piece now joins a
   neighbouring colour. On 24 noise test images, 2 kept such a piece; none do
   now (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`).
+- **That tidy no longer strands a speck no neighboring color can take.** The
+  fix above left the piece in place when every color around it would make
+  another corner-only meeting. The tidy now changes a different pixel of the
+  corner instead. Only hand-built grids reach this: no
+  noise or sample image left a piece behind before or after
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap` and `... despeckle`).
 - **`scripts/measure-cut-width.mjs` no longer dies or prints `Infinity` on a sidecar
   with no holes or no over-floor seam overlap.** Its `part-eaten >50%` column
   also now compares areas on one basis. The published cut-region-width table is

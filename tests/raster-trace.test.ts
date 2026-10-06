@@ -218,14 +218,34 @@ describe('traceLabelMap', () => {
     expect(traced.labels[2 * 6 + 2]).toBe('ayz'.indexOf('z'));
   });
 
-  it('leaves a split piece under the floor when every label for it makes a checkerboard', () => {
-    // As above, but 'z' now makes 'y','z'/'z','y' above and right of the stranded pixel. A
-    // self-touching ring is the worse failure, so the pixel stays 'a' and nothing else moves.
+  it('breaks a checkerboard at its bottom-left cell when the bottom-right strands what no label can take', () => {
+    // As above, but 'z' now makes 'y','z'/'z','y' above and right of the 'a' that rewriting the
+    // bottom-right cell strands, so no label can take it. Rewriting the bottom-left 'y' instead
+    // strands a 'y' that 'a' can take.
     const rows = ['aayy..', 'yyazz.', 'zzayy.', 'yyzz..', '......', '......'];
     const traced = traceLabelMap(grid(rows, 'ayz'), params(), 2);
-    expect(settled(traced, rows)).toEqual({ under: 1, checkers: 0 });
-    expect(traced.labels[2 * 6 + 2]).toBe('ayz'.indexOf('a'));
-    expect(traced.components.map((c) => c.area)).toEqual([5, 2, 2, 2, 2, 2, 2, 1]);
+    expect(settled(traced, rows)).toEqual({ under: 0, checkers: 0 });
+    expect(traced.labels[1 * 6 + 0]).toBe('ayz'.indexOf('a'));
+    expect(traced.components.reduce((s, c) => s + c.area, 0)).toBe(18);
+  });
+
+  it('never breaks a checkerboard at a top cell, which can remake one already broken', () => {
+    // Breaking the A,B/B,A at the top left makes another one down and right of it. Its
+    // bottom-right cell strands a 'c' no label can take, and its top-left would remake the first
+    // A,B/B,A, which the scan has passed. The bottom-left does neither.
+    const rows = ['aaccb', 'ccaab', '..acb', '.bbca', '.aaba', '...ba'];
+    const traced = traceLabelMap(grid(rows, 'abc'), params(), 2);
+    expect(settled(traced, rows)).toEqual({ under: 0, checkers: 0 });
+  });
+
+  it('keeps the bottom-right rewrite when what it leaves clears the floor', () => {
+    // The 'a' left after rewriting the bottom-right cell is four pixels. Sizing a piece stops at
+    // the floor, so reaching it is clearing it.
+    const rows = ['ac..', 'ac.c', 'caac', 'caaa'];
+    const traced = traceLabelMap(grid(rows, 'abc'), params(), 2);
+    expect(Array.from(traced.labels)).toEqual(
+      Array.from(grid(['ac..', 'ac.c', 'ccac', 'caaa'], 'abc').labels),
+    );
   });
 
   it('removes a speck the fractional floor keeps but the placed size cannot print', () => {
