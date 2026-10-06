@@ -53,6 +53,12 @@ scripts/measure-clip-ink.test.ts`.
 
 ### Fixed
 
+- **An outline that crosses itself into equal halves now says it was left
+  out.** A figure-8, infinity sign or equal bow-tie used to vanish with no
+  warning. Alone, it left no colors and Export off with nothing said. A
+  warning now counts these outlines and asks for them redrawn as separate
+  shapes. No SVG fixture, template or traced raster in the corpus raises it
+  (`node_modules/.bin/vite-node scripts/measure-cancelling-outlines.ts`).
 - **A depth deeper than the chair's wall no longer cuts through it.** The
   chair body had no depth limit at all: 20 mm over a whole side split two of
   its four parts in two, with no warning. Each colour is now cut 0.05 mm short

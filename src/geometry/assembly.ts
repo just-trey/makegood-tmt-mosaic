@@ -15,6 +15,7 @@ import type {
   DetectedColor,
   ParsedSVG,
   PolyFeature,
+  SVGShape,
 } from '../types';
 import {
   applyColorMerges,
@@ -32,7 +33,7 @@ import { noticeBuild, warnBuild } from '../warnings';
 import { resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
 import { throwIfCancelled } from '../cancel';
-import { fillCoveredNotice } from './assemblyWarnings';
+import { cancelledOutlinesWarning, fillCoveredNotice } from './assemblyWarnings';
 import {
   isCuttable,
   newPartTally,
@@ -207,12 +208,19 @@ export async function buildAssemblyGeometry(
   // `byColor` pools each artwork's regions by hex, so color detection, merging, base assignment
   // and depth all see one palette across every design in the scene.
   const perArtworkColors: Record<string, PolyFeature>[] = [];
+  let cancelledOutlines = 0;
+  // Per file, not per placement: one design placed on three zones has one outline to redraw.
+  const counted = new Set<SVGShape[]>();
   for (let i = 0; i < artworks.length; i++) {
-    const r = await computeNetRegionsByColor(artworks[i].parsed.shapes, (f) =>
+    const shapes = artworks[i].parsed.shapes;
+    const r = await computeNetRegionsByColor(shapes, (f) =>
       reportProgress(((i + f) / artworks.length) * 0.4),
     );
     perArtworkColors.push(r.byColor);
+    if (!counted.has(shapes)) cancelledOutlines += r.cancelledOutlines;
+    counted.add(shapes);
   }
+  if (cancelledOutlines) warnBuild(cancelledOutlinesWarning(cancelledOutlines));
   const byColor: Record<string, PolyFeature> = {};
   for (const one of perArtworkColors)
     for (const [hex, feat] of Object.entries(one))

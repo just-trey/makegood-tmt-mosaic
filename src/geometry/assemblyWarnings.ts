@@ -17,6 +17,13 @@ export function unprintableSpeckNotice(label: string, partName: string): string 
   );
 }
 
+/** Rule 1 for `cancelsOut` (regions.ts): one warning per build, counted over every design. */
+export function cancelledOutlinesWarning(n: number): string {
+  return n === 1
+    ? "1 outline crosses over itself and its halves cancel out, so it was left out. Redraw it as separate shapes that don't cross."
+    : `${n} outlines cross over themselves and their halves cancel out, so they were left out. Redraw them as separate shapes that don't cross.`;
+}
+
 /** One pill per colour and part, however many of the three clips leave a speck. See Notice.key. */
 export const speckKey = (ci: number, partId: number): string => `speck:${ci}:${partId}`;
 
