@@ -217,9 +217,10 @@ no one axis to measure the part along.
 - The thinnest wall under any chair chart's whole clip is 2.03 mm, at the
   handles' edges, so the default 1 mm depth is never cut short there
   (`node_modules/.bin/vite-node scripts/measure-wall.ts`).
-- Samples are kept per chart between builds, rays capped at the deepest setting
-  asked for so far. The first build to cut a chart pays for it: about 2 s across
-  every chair chart with rays capped at 50 mm (same script).
+- Samples are kept per chart between builds. A setting deeper than their cap
+  re-measures at the larger of it and double the cap. The first build to cut a
+  chart pays for it: about 2 s across every chair chart with rays capped at
+  50 mm (same script).
 
 **Rotated copies** are supported (a wheel's two halves): the slice of the design
 landing on the copy is mapped back into the part's own print orientation.
