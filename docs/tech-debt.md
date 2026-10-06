@@ -796,3 +796,79 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
   `npm run build && MOSAIC_GPU=1 node scripts/bench-zone-rebuild.mjs`.
 - **Fill tiling has no cancel check.** The page no longer waits on it; the worker is terminated after
   `CANCEL_GRACE_MS` (1s) instead.
+
+## A finished export says nothing, and a disabled Export gives no reason
+
+Third consecutive review cycle (bloat, 2026-08-24 beta, [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 2).
+
+- After a download the panel is byte-identical; the browser's download chip is the only signal. A chair
+  export is 26-81MB on 11 plates, and nothing says so.
+- `#export-hint` reads the same enabled or disabled. No artwork, a design entirely off the part, and a
+  cancelled rebuild each disable or empty the export a different way, unexplained (cycle items 10, 12).
+- A part whose file fails to load raises an alert naming it; once dismissed, Export ships the rest with no
+  standing warning (wheel: "Cap" only; chair: 12 of 13 parts). Cycle item 6.
+- **Closing it**: one status line under the button after a download (file name, plates, filaments, size);
+  a one-line reason when disabled, one rule for every "nothing to print" case; a standing warning for a
+  part that did not load; clear the raster "No opaque pixels" warning on the next good image load.
+
+## New chair artwork lands on one zone, so a one-sided chair is the default path
+
+- A new design binds to "Left side"; "7 of 8 zones still blank" is ℹ, and Export is enabled. The
+  "artwork on 1 of 8 zones" warning arrives after the download.
+- The sample does the same: a thumbnail-sized badge on the flank facing away from the default camera.
+- The zone select offers both "All zones" and "Whole chair" with nothing saying how they differ.
+- Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 1, three lenses.
+- **Closing it**: default new chair artwork to All zones, or say the zone count in `#export-summary`
+  before the click; explain or drop one of the two "whole" entries. Make "Load sample artwork" a no-op
+  once loaded and give the sample a size in mm so it raises no note (cycle item 13).
+
+## Placement and prime-tower notices appear only after the file is saved
+
+- Hubcap 240mm on the X1C, 260mm on the U1: "No tower position was saved" shows only after the
+  download. Half of the 2026-08-24 T0-8; the other half (pills outliving a printer switch) is fixed.
+- A chair export on the H2D, a bed with no baked pass, shows no "check it in your slicer" note; the hubcap
+  on the same printer does. The positions themselves are the open section "The chair's prime-tower
+  positions have only been verified on one bed size".
+- Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) items 3, 11.
+- **Closing it**: compute the placement notes on the build, not the export, and show the unverified-bed
+  note for every kind.
+
+## Chair notices pile up, and warnings name colors by hex
+
+- A plain 3-color design on all zones raised 8 "too fine to print" notices, about 3 visible; depth 60
+  raised 17 clamp warnings. The color named is often the big backdrop, so "detail" reads false.
+- Every warning uses hex (`"#f5d020"`) while the row beside it reads "≈ Yellow". Convention 2.
+- Depth fields keep the typed value (0 → `0.00`, 50 → `50.00`) while 0.20 / 2.95 is cut; `0.001` is shown
+  as "0.00 mm", a tolerance-scale number.
+- Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) items 4, 9.
+- **Closing it**: one line per color across parts, as the wheel's clamp warning already groups; color
+  names in warning text; write the applied depth back into the field.
+
+## Removing a design cannot be undone
+
+- One click on a row's × removes the design, its colors and any merges. Ctrl+Z does nothing; there is no
+  undo control. Third consecutive cycle.
+- Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 5.
+- **Closing it**: an "Undo" toast for the last removal at minimum; a snapshot stack on the store later.
+
+## Export and Colors sit far below the fold
+
+- `#left` is 1436-1905px tall in a 730px pane. 7-color footrest at 1024x768: `#color-list` at 1134px,
+  `#btn-export` at 2089px in a 688px pane. Collapsed panels reopen on reload.
+- The 5+ slot warning says to drag color rows together, 1,100px away, and never names the Colors slider
+  that fixed it in three moves (6 → 3 colors, 7 → 4 slots); auto-merge left it at 7 slots on every
+  setting.
+- Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) items 7, 8, 18.
+- **Closing it**: pin the Export block; remember `details` state; name the Colors slider in the slot
+  warning.
+
+## UI copy uses three names for one thing, and engine words
+
+[2026-10-06 beta](review-cycles/2026-10-06-beta.md) items 14-17. Convention 34 and the vocabulary table.
+
+- Wheel: "Top ×2 + Cap" in the picker, Top / Bottom / Cap in the list, "Plate 1: Top, Cap" in the export.
+- Chair: plates say "Wing", zones and templates say "fender". Seat hatching has no legend.
+- "Reload assembly" on every kind with every part loaded; "Pockets are cut into each part's real mesh"
+  stays after artwork loads; Advanced reads "plane offset 170.00mm, 271-pt boundary".
+- Hubcap size stated twice (field, then bold "Actual size 220.0 × 220.0 mm").
+- **Closing it**: one copy sweep against the vocabulary table.
