@@ -925,21 +925,10 @@ count. None of them reaches the print as drawn.
   template-ink exemption (`TEMPLATE_INKS`); without it all 13 warn
   (`RUN_SVG_SKIP_SWEEP=1 npx vitest run scripts/measure-svg-skipped-content.test.ts`, second table).
 - **Unmeasured**: how often real uploads carry each kind. The fixtures say nothing about user files.
+  Figma writes `fill="none"` on the root `<svg>`, so every Figma outline lands in the stroke row.
 - **Still silent**:
   - A stroke on a filled shape: the fill prints, the stroke is dropped.
   - A stroke-only shape inside a group hidden by `fill-opacity="0"`, which still draws its stroke.
 - **Clip proof is conservative.** A clip is taken to crop a shape unless every point of the shape lies
   inside every edge of one clip outline (`insideEveryEdge`, [src/svg/clip.ts](../src/svg/clip.ts)). Under a clip
   that isn't convex, a shape spanning both arms of an L warns although nothing is cropped.
-
-## A shape that inherits `fill="none"` prints as solid black
-
-`<g fill="none" stroke="#f00"><rect width="40" height="40"/></g>` imports one black filled rect.
-`getAncestorFill` ([src/svg/parse.ts](../src/svg/parse.ts)) returns `none`, `normalizeColor` maps it to
-null, and the shape falls back to `#000000`. A browser draws a red outline and no fill.
-
-- Figma writes `fill="none"` on the root `<svg>`, so its stroke-only shapes take this path. Unmeasured
-  on real Figma files.
-- Bypasses the stroke warning above: these shapes never reach the `fill="none"` branch.
-- **Closing it**: treat an inherited `none` like an own `fill="none"` in `walk`, then retest the hidden
-  group count and the anchor circle.

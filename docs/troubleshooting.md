@@ -854,7 +854,9 @@ so it was skipped."_
 
 **What it means.** The app only works in flat colors — that's what becomes a
 printable region — so it can't trace an element filled with a gradient or a
-pattern. Rather than guess at an average color, that shape is left out.
+pattern. Rather than guess at an average color, that shape is left out. A
+gradient set on a group fills every shape in it that has no fill of its own,
+so each of those shapes is named.
 
 **What you get.** Only that shape is skipped. The number in the message counts
 every shape element in document order — hidden ones and clip-mask ones
@@ -966,7 +968,9 @@ your editor to print them."_ With one: _"1 stroke with no fill was skipped.
 Convert strokes to paths in your editor to print them."_
 
 **What it means.** The app prints fills only. A shape with `fill="none"` and a
-visible stroke draws a line on screen and nothing on the print.
+visible stroke draws a line on screen and nothing on the print. The "no fill"
+can be the shape's own or come from a group or the whole file: Figma sets it
+on every export, so its outline-only shapes land here.
 
 **What you get.** One warning per load. These aren't counted:
 
