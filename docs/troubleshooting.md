@@ -896,9 +896,100 @@ layer's name (`inkscape:label`, or Illustrator's `data-name`), else its `id`.
 print, show the layer (or set its opacity back to 100%) in your editor, save,
 and load the SVG again.
 
+## Troubleshooting: "Masks aren't applied, so N shapes print uncropped" warnings
+
+Full text: _"Masks aren't applied, so 3 shapes print uncropped and can cover
+other colors. Crop the masked shapes in your editor."_
+
+**What it means.** Some shapes sit under a clipping mask (`clip-path`) or a
+mask (`mask`). The app reads each shape's own outline and ignores the mask, so
+those shapes print whole, past the edge the mask hid.
+
+**What you get.** The count is shapes, not masks. A shape the mask leaves
+whole isn't counted.
+
+- An artboard-sized clipping mask (the kind Illustrator writes around
+  everything) crops nothing and raises no warning.
+- A clipping mask the app can't measure counts every shape under it: a CSS
+  shape such as `inset()`, one sized to the shape (`objectBoundingBox`), or
+  one holding text or a linked copy.
+- A `mask` always counts: it hides by brightness, so no outline proves it
+  crops nothing.
+- A mask that points at nothing is ignored, as a browser ignores it.
+
+**What to do.** Crop the shapes for real, then save and load again. In
+Inkscape, select the shape and its clip and use Path → Intersection. In
+Illustrator, Pathfinder → Crop.
+
+## Troubleshooting: "N linked copies were skipped" warnings
+
+Full text: _"2 linked copies were skipped. Unlink clones and symbols in your
+editor to print them."_ With one: _"1 linked copy was skipped. Unlink clones
+and symbols in your editor to print them."_
+
+**What it means.** The file draws something with `<use>`: an Inkscape clone or
+an Illustrator symbol instance. The app doesn't follow the link, so the copy is
+left out. The original still prints if it is drawn on its own.
+
+**What you get.** One warning per load, counting copies that would have
+drawn. Copies inside `<defs>`, in a hidden group, or set to `display:none` or
+opacity 0 aren't counted.
+
+**What to do.** Inkscape: select the clones and use Edit → Clone → Unlink
+Clone. Illustrator: select the symbol instances and use Break Link to Symbol.
+Save and load again.
+
+## Troubleshooting: "N text objects were skipped" warnings
+
+Full text: _"2 text objects were skipped. Convert text to outlines in your
+editor to print it."_ With one: _"1 text object was skipped. Convert text to
+outlines in your editor to print it."_
+
+**What it means.** The app reads shapes, not fonts, so live text is left out.
+
+**What you get.** One count per `<text>` element; its `<tspan>` lines are part
+of it. Text that draws nothing (no fill and no stroke, hidden, or opacity 0)
+isn't counted.
+
+- **Template labels are never counted.** Text in the templates' guide blue
+  (`#1a4f8f`) or canvas gray (`#bcbcbc`) is a label, not design. Loading a
+  template, or a design drawn on one, stays quiet.
+
+**What to do.** Convert the text to shapes, then save and load again.
+Inkscape: Path → Object to Path. Illustrator: Type → Create Outlines.
+
+## Troubleshooting: "N strokes with no fill were skipped" warnings
+
+Full text: _"3 strokes with no fill were skipped. Convert strokes to paths in
+your editor to print them."_ With one: _"1 stroke with no fill was skipped.
+Convert strokes to paths in your editor to print them."_
+
+**What it means.** The app prints fills only. A shape with `fill="none"` and a
+visible stroke draws a line on screen and nothing on the print.
+
+**What you get.** One warning per load. These aren't counted:
+
+- A stroke that draws nothing: `stroke="none"`, width 0, stroke opacity 0,
+  opacity 0, or hidden.
+- **The design-boundary circle**: the largest circle in the file, often drawn
+  as an outline on purpose (see "This SVG has a circle around most of the
+  artwork…" below).
+- **Template guide lines**: strokes in the templates' guide blue (`#1a4f8f`)
+  or canvas gray (`#bcbcbc`).
+
+A stroke on a filled shape is a different case: the fill prints and the stroke
+is dropped, with no warning.
+
+**What to do.** If the line should print, turn it into a filled shape, then
+save and load again. Inkscape: Path → Stroke to Path. Illustrator: Object →
+Path → Outline Stroke. If it's a guide, ignore the warning or delete the line.
+
 ## Troubleshooting: "No flat-filled shapes were found in this SVG."
 
-Full text: _"No flat-filled shapes were found in this SVG."_
+Full text: _"No flat-filled shapes were found in this SVG."_ When text, linked
+copies or strokes are why, it names them: _"No flat-filled shapes were found in
+this SVG. Skipped: … Convert them to filled shapes in your editor."_ The list
+reads like "2 text objects, 1 linked copy, 1 stroke with no fill".
 
 **What it means.** The file parsed as valid XML, but nothing usable was left
 after skipping elements with a gradient or pattern fill (see above) and elements
@@ -910,6 +1001,8 @@ already loaded stays exactly as it was.
 
 - Stroke-only line art. The app ignores strokes everywhere and looks only at
   fills.
+- Live text, or linked copies (`<use>`) of shapes kept in `<defs>`. The
+  sections above say how to convert each.
 - Every shape uses a gradient or pattern fill, and all of them were skipped.
 - Everything meaningful sits inside a `<defs>` or `<clipPath>` and nothing is
   drawn from it.

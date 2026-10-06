@@ -905,3 +905,41 @@ asking for it.
    `computeNetRegionsByColor`, which is pure 2D today.
 3. Test: an equal bow-tie cuts both lobes, a twice-wound loop differs by rule. Then delete
    `cancelsOut`, its warning and its troubleshooting section.
+
+## SVG clips, masks, linked copies, text and strokes are named, not drawn
+
+`parseSVGDocument` ([src/svg/parse.ts](../src/svg/parse.ts)) warns once per load for each kind, with a
+count. None of them reaches the print as drawn.
+
+| Element                   | Today                                                | Closing it takes                                                                                                                     |
+| ------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `clip-path`               | Shape prints uncropped; warned unless it fits inside | Intersect each shape's loops with the clip's (`polygon-clipping` is already a dependency); `objectBoundingBox` needs the shape's box |
+| `mask`                    | Shape prints unmasked; always warned                 | No outline equivalent for a brightness mask. Likely stays a warning                                                                  |
+| `<use>`                   | Skipped                                              | Walk the referenced element through the same `walk`, with `x`/`y` and a `<symbol>`'s viewBox                                         |
+| `<text>`                  | Skipped                                              | Glyph outlines need a font parser and the font file. Likely stays a warning                                                          |
+| stroke with `fill="none"` | Skipped                                              | Offset each stroke to a polygon (width, joins, caps, dashes)                                                                         |
+
+- **Measured**: no shipped or fixture SVG has a `clip-path`, `mask` or `<use>`. That is the four
+  pattern fixtures, the 11 `public/templates/` files, the sample badge and two generated hubcap
+  templates. All 13 template files have text labels and 8 have guide strokes. They stay quiet only by the
+  template-ink exemption (`TEMPLATE_INKS`); without it all 13 warn
+  (`RUN_SVG_SKIP_SWEEP=1 npx vitest run scripts/measure-svg-skipped-content.test.ts`, second table).
+- **Unmeasured**: how often real uploads carry each kind. The fixtures say nothing about user files.
+- **Still silent**:
+  - A stroke on a filled shape: the fill prints, the stroke is dropped.
+  - A stroke-only shape inside a group hidden by `fill-opacity="0"`, which still draws its stroke.
+- **Clip proof is conservative.** A clip is taken to crop a shape unless every point of the shape lies
+  inside every edge of one clip outline (`insideEveryEdge`, [src/svg/clip.ts](../src/svg/clip.ts)). Under a clip
+  that isn't convex, a shape spanning both arms of an L warns although nothing is cropped.
+
+## A shape that inherits `fill="none"` prints as solid black
+
+`<g fill="none" stroke="#f00"><rect width="40" height="40"/></g>` imports one black filled rect.
+`getAncestorFill` ([src/svg/parse.ts](../src/svg/parse.ts)) returns `none`, `normalizeColor` maps it to
+null, and the shape falls back to `#000000`. A browser draws a red outline and no fill.
+
+- Figma writes `fill="none"` on the root `<svg>`, so its stroke-only shapes take this path. Unmeasured
+  on real Figma files.
+- Bypasses the stroke warning above: these shapes never reach the `fill="none"` branch.
+- **Closing it**: treat an inherited `none` like an own `fill="none"` in `walk`, then retest the hidden
+  group count and the anchor circle.
