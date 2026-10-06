@@ -132,12 +132,10 @@ const HAIRLINE_WALK_PX = 16;
  * default. Chosen so the flanks, which are edge-on from front and back alike, come face-on
  * somewhere in the sweep.
  *
- * Which view inks which zone, as interior samples at IDENTITY_STEP_PX. Measured by swapping this list
- * for 36 views (three pitches by twelve 50px yaw steps) and logging the per-view counts, chair,
- * 2026-10-06: wing-left and wing-right ink from the framed default and the first ~200px of yaw;
- * seat-left and seat-right ink at every yaw once the pitch is +140px of drag from the default
- * (10-20 samples), and at most 1-4 samples at the default pitch. So v5 is that pitch. A zone that
- * inks nowhere here hard-errors in the "produced no interior ink sample" check below.
+ * Per-view interior counts are logged as `[vN/zone X]` (chair, 2026-10-06): the wings ink from v0 (159,
+ * 106), the seats only at v5 (15, 13; v0-v4 give seat-left 1 at v1, seat-right 0). Without v5,
+ * `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion` fails seat-right with "produced no
+ * interior ink sample".
  *
  * One entry, `WHOLE_CHAIR_ZONE` (geometry/zones.ts's `*whole`), is a virtual binding that spans
  * every physical zone rather than a chart of its own — `zonePickAtNdc` can never return it, since
