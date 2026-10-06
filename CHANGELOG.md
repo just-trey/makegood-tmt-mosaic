@@ -65,6 +65,10 @@ scripts/measure-clip-ink.test.ts`.
   leave a piece under the size the trace cleans to. That piece now joins a
   neighbouring colour. On 24 noise test images, 2 kept such a piece; none do
   now (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`).
+- **`scripts/measure-cut-width.mjs` no longer dies or prints `Infinity` on a sidecar
+  with no holes or no over-floor seam overlap.** Its `part-eaten >50%` column
+  also now compares areas on one basis. The published cut-region-width table is
+  unchanged (`npx vite-node scripts/measure-cut-width.mjs [sidecar.json]`).
 - **A drag that starts on a placement corner handle always resizes.** Where
   the rotate handle overlapped a corner, a drag there rotated instead. The
   rest of the rotate handle is unchanged. Each

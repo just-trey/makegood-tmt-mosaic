@@ -8,7 +8,7 @@
 // Per PIECE, never per chart or per zone. measure-seam-overlap.mjs records quoting a margin off
 // the wrong granularity as a wrong turn that published a figure wrong by 15x.
 //
-// Usage: npx vite-node scripts/measure-cut-width.mjs
+// Usage: npx vite-node scripts/measure-cut-width.mjs [sidecar.json]
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +20,9 @@ import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 import { regionNetArea, MIN_CUT_PIECE_MM2 } from './lib/zonebake.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const z = JSON.parse(readFileSync(path.join(REPO, 'public/stl/chair-body-zones.json'), 'utf8'));
+const z = JSON.parse(
+  readFileSync(process.argv[2] ?? path.join(REPO, 'public/stl/chair-body-zones.json'), 'utf8'),
+);
 const wasm = await getManifold();
 
 const WIDTHS = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8];
@@ -227,7 +229,7 @@ for (const w of WIDTHS) {
   const k = WIDTHS.indexOf(w);
   const empty = rows.filter((r) => r.opened[k] === 0);
   const kept = rows.filter((r) => r.opened[k] > 0);
-  const partial = rows.filter((r) => r.opened[k] > 0 && r.opened[k] < r.net * 0.5);
+  const partial = rows.filter((r) => r.opened[k] > 0 && r.opened[k] < r.csArea * 0.5);
   const emptyArea = empty.reduce((s, r) => s + r.net, 0);
   const hiDrop = empty.length ? Math.max(...empty.map((r) => r.critical)) : 0;
   const loKeep = kept.length ? Math.min(...kept.map((r) => r.critical)) : Infinity;
@@ -468,44 +470,50 @@ for (const h of holes)
 
 // The 1.43 x 16.56mm radiused slot MIN_HOLE_WIDTH_MM's docstring names, followed through the sweep
 // on its own piece: does the opening still leave a hole of that size there?
-const slot = holes.reduce((best, h) =>
-  Math.abs(h.short - 1.43) + Math.abs(h.long - 16.56) <
-  Math.abs(best.short - 1.43) + Math.abs(best.long - 16.56)
-    ? h
-    : best,
-);
+const slot = holes.length
+  ? holes.reduce((best, h) =>
+      Math.abs(h.short - 1.43) + Math.abs(h.long - 16.56) <
+      Math.abs(best.short - 1.43) + Math.abs(best.long - 16.56)
+        ? h
+        : best,
+    )
+  : null;
 console.log(
-  `\nThe named 1.43 x 16.56mm slot resolves to ${slot.where}: ` +
-    `${slot.short.toFixed(3)} x ${slot.long.toFixed(2)}mm, ${slot.area.toFixed(2)}mm².`,
+  slot
+    ? `\nThe named 1.43 x 16.56mm slot resolves to ${slot.where}: ` +
+        `${slot.short.toFixed(3)} x ${slot.long.toFixed(2)}mm, ${slot.area.toFixed(2)}mm².`
+    : '\nNo piece carries a hole, so the named 1.43 x 16.56mm slot has nothing to resolve to.',
 );
-const slotC = bboxCentre(slot.ring);
-console.log('  width   hole still there   its mm²   bbox short x long');
-for (const w of WIDTHS) {
-  const cs = sectionOf(slot.rings);
-  const eroded = cs.offset(-w / 2, 'Miter', 2, 16);
-  const opened = eroded.isEmpty() ? null : eroded.offset(w / 2, 'Miter', 2, 16);
-  const polys = opened ? opened.toPolygons() : [];
-  let best = null;
-  for (const p of polys) {
-    const pts = p.map(([x, y]) => [x, y]);
-    if (loopArea(pts) >= 0) continue; // negative area = a hole in this fill convention
-    const c = bboxCentre(pts);
-    const d = Math.hypot(c[0] - slotC[0], c[1] - slotC[1]);
-    if (!best || d < best.d) best = { d, pts };
+if (slot) {
+  const slotC = bboxCentre(slot.ring);
+  console.log('  width   hole still there   its mm²   bbox short x long');
+  for (const w of WIDTHS) {
+    const cs = sectionOf(slot.rings);
+    const eroded = cs.offset(-w / 2, 'Miter', 2, 16);
+    const opened = eroded.isEmpty() ? null : eroded.offset(w / 2, 'Miter', 2, 16);
+    const polys = opened ? opened.toPolygons() : [];
+    let best = null;
+    for (const p of polys) {
+      const pts = p.map(([x, y]) => [x, y]);
+      if (loopArea(pts) >= 0) continue; // negative area = a hole in this fill convention
+      const c = bboxCentre(pts);
+      const d = Math.hypot(c[0] - slotC[0], c[1] - slotC[1]);
+      if (!best || d < best.d) best = { d, pts };
+    }
+    const line = best
+      ? (() => {
+          const [bw, bh] = bboxOfRing(best.pts);
+          return (
+            `${'yes'.padStart(16)}  ${Math.abs(loopArea(best.pts)).toFixed(2).padStart(8)}  ` +
+            `${Math.min(bw, bh).toFixed(3).padStart(8)} x ${Math.max(bw, bh).toFixed(2)}`
+          );
+        })()
+      : `${'NO'.padStart(16)}`;
+    console.log(`${w.toFixed(2).padStart(7)}  ${line}`);
+    opened?.delete();
+    eroded.delete();
+    cs.delete();
   }
-  const line = best
-    ? (() => {
-        const [bw, bh] = bboxOfRing(best.pts);
-        return (
-          `${'yes'.padStart(16)}  ${Math.abs(loopArea(best.pts)).toFixed(2).padStart(8)}  ` +
-          `${Math.min(bw, bh).toFixed(3).padStart(8)} x ${Math.max(bw, bh).toFixed(2)}`
-        );
-      })()
-    : `${'NO'.padStart(16)}`;
-  console.log(`${w.toFixed(2).padStart(7)}  ${line}`);
-  opened?.delete();
-  eroded.delete();
-  cs.delete();
 }
 
 // The 0.15mm seam overlaps are a DIFFERENT population: each is the intersection of two charts'
@@ -537,9 +545,10 @@ for (const zone of z.zones) {
 }
 const overFloor = overlaps.filter((o) => o.area >= CLIP_REMNANT_FLOOR_MM2);
 console.log(`\n${overlaps.length} seam-overlap pieces, ${overFloor.length} over the area floor.`);
+const thinnest = (k) =>
+  overFloor.length ? `${Math.min(...overFloor.map((o) => o[k])).toFixed(4)}mm` : 'n/a';
 console.log(
-  `  thinnest over the floor: ${Math.min(...overFloor.map((o) => o.short)).toFixed(4)}mm by bbox, ` +
-    `${Math.min(...overFloor.map((o) => o.critical)).toFixed(4)}mm by opening.`,
+  `  thinnest over the floor: ${thinnest('short')} by bbox, ${thinnest('critical')} by opening.`,
 );
 // An overlap that WAS a cutRegions piece would make the seam figure a constraint on this guard.
 const coincide = overlaps.filter((o) =>

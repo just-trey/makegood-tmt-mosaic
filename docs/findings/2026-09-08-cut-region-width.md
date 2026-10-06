@@ -10,6 +10,13 @@ npx vite-node scripts/measure-cut-width.mjs
 
 committed with this report. Nothing was re-baked.
 
+**Re-run note**: the shipped sidecar has been re-baked since `fdada8b`, so the
+command above no longer prints these tables. The pinned run takes that
+commit's sidecar as the script's argument:
+`npx vite-node scripts/measure-cut-width.mjs old.json`, where `old.json` is
+`public/stl/chair-body-zones.json` as of `fdada8b`. It reproduces every table
+here. The script's three defects were fixed afterwards (last section).
+
 **Result: no width separates, so no guard should ship on this measurement.**
 The 87 `cutRegions` pieces run from 0.0354mm wide to 144.9mm with no daylight
 anywhere a guard could sit. The run does print one real gap — 9.3963mm to
@@ -268,3 +275,26 @@ whether a thin cut-region strip is surface a cover hides". No guard.
 
 A constant picked off this sweep would be a number with a printed table behind
 it and no measurement in it. That is the failure CLAUDE.md rule 4 names.
+
+## Script fixes after the run
+
+Three defects in `scripts/measure-cut-width.mjs` were fixed after this report.
+**The conclusion does not change, and no published figure moves.**
+
+- The `part-eaten >50%` column divided a `CrossSection.area()` by a
+  `regionNetArea`. It now uses the `CrossSection` area on both sides.
+- `holes.reduce` no longer throws on a sidecar with no holes, and
+  `Math.min(...[])` no longer prints `Infinity` when no seam overlap clears the
+  area floor.
+
+Old script (as on `main` before the fix, with the sidecar path read from the
+argument) vs new, both on the `fdada8b` sidecar:
+
+| script | part-eaten >50% at widths 0.05, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50, 0.60, 0.80 |
+| ------ | ------------------------------------------------------------------------------ |
+| old    | 3, 9, 4, 1, 2, 2, 2, 1, 3                                                      |
+| new    | 3, 9, 4, 1, 2, 2, 2, 1, 3                                                      |
+
+`diff` of the two full outputs is empty. The `CrossSection`-to-net gap peaks
+at 0.0273%, and no piece sits that close to the 50% line. On the current
+re-baked sidecar the old and new scripts also print identical output.

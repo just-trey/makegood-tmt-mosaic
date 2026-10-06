@@ -702,25 +702,6 @@ the filled silhouette (closed holes excluded):
 `scripts/check-cut-ribbon-ink.mjs`. Either it shows no ink past the triangles, or a wider clip lands
 without the four regressions above.
 
-## `measure-cut-width.mjs` breaks on the sidecar its own conclusion asks for
-
-Three defects in the script behind
-[docs/findings/2026-09-08-cut-region-width.md](findings/2026-09-08-cut-region-width.md), found by review
-on the branch that added the off-surface run and deliberately left there.
-
-| line | what                                                                  | when it bites                                                |
-| ---- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
-| 471  | `holes.reduce` with no initial value, so it throws on an empty list   | a sidecar whose cut pieces carry no holes                    |
-| 541  | `Math.min(...[])` prints `Infinity` as a thinnest-overlap width       | no seam overlap clears the area floor                        |
-| 230  | `part-eaten>50%` divides a `CrossSection.area()` by a `regionNetArea` | every run — the basis mix its own comment at 197-199 forbids |
-
-The first two are states a future re-bake can reach, so the script would die on the run meant to measure
-it.
-
-**Why it is still open**: the report is pinned to its run, and the third changes a published column.
-Script and report should move together, by their author. The sibling `measure-cut-offsurface.mjs` guards
-both empty-input cases, and its `deepest()` helper is the shape to copy.
-
 ## Whether a near-floor clipped-ink piece is dust or a drawn detail is unmeasured
 
 `docs/findings/2026-09-27-clip-ink-sweep.md` swept the runtime floor's own population (a placed design's
