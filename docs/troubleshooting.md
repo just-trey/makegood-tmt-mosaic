@@ -902,8 +902,8 @@ Full text: _"Masks aren't applied, so 3 shapes print uncropped and can cover
 other colors. Crop the masked shapes in your editor."_
 
 **What it means.** Some shapes sit under a clipping mask (`clip-path`) or a
-mask (`mask`). The app reads each shape's own outline and ignores the mask, so
-those shapes print whole, past the edge the mask hid.
+mask (`mask`). The app reads each shape's own outline and doesn't crop to the mask,
+so those shapes print whole, past the edge the mask hid.
 
 **What you get.** The count is shapes, not masks. A shape the mask leaves
 whole isn't counted.
@@ -989,7 +989,7 @@ Path → Outline Stroke. If it's a guide, ignore the warning or delete the line.
 
 Full text: _"No flat-filled shapes were found in this SVG."_ When text, linked
 copies or strokes are why, it names them: _"No flat-filled shapes were found in
-this SVG. Skipped: … Convert them to filled shapes in your editor."_ The list
+this SVG. Skipped: … Convert or unlink them in your editor."_ The list
 reads like "2 text objects, 1 linked copy, 1 stroke with no fill".
 
 **What it means.** The file parsed as valid XML, but nothing usable was left

@@ -65,8 +65,9 @@ scripts/measure-clip-ink.test.ts`.
   strokes with no fill are skipped; shapes under a clipping mask or mask print
   uncropped. An artboard-sized clip that crops nothing stays quiet, as do the
   templates' own labels and guide lines. "No flat-filled shapes were found"
-  now names these when they are why. The shipped templates, sample and pattern
-  fixtures raise none of the new warnings
+  now names the skipped text, linked copies and strokes when they are why.
+  The shipped templates, sample and pattern fixtures raise none of the new
+  warnings
   (`RUN_SVG_SKIP_SWEEP=1 npx vitest run scripts/measure-svg-skipped-content.test.ts`).
 - **A depth deeper than the chair's wall no longer cuts through it.** The
   chair body had no depth limit at all: 20 mm over a whole side split two of

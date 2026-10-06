@@ -592,7 +592,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     ].filter(Boolean);
     throw new Error(
       skipped.length
-        ? `No flat-filled shapes were found in this SVG. Skipped: ${skipped.join(', ')}. Convert them to filled shapes in your editor.`
+        ? `No flat-filled shapes were found in this SVG. Skipped: ${skipped.join(', ')}. Convert or unlink them in your editor.`
         : 'No flat-filled shapes were found in this SVG.',
     );
   }

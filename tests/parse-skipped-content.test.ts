@@ -346,7 +346,7 @@ describe('the no-shapes error', () => {
         ),
       ),
     ).toThrow(
-      'No flat-filled shapes were found in this SVG. Skipped: 2 text objects, 1 linked copy, 1 stroke with no fill. Convert them to filled shapes in your editor.',
+      'No flat-filled shapes were found in this SVG. Skipped: 2 text objects, 1 linked copy, 1 stroke with no fill. Convert or unlink them in your editor.',
     );
   });
 
