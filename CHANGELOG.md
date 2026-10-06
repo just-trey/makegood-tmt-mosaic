@@ -57,7 +57,8 @@ scripts/measure-clip-ink.test.ts`.
 - **A traced image that loses a color now always says so.** Two cases used to
   drop a color silently. When the trace hit its detail limit, the notice now
   ends "including 1 color". With Detail already as high as it helps, a new
-  notice says the color's pieces are too small to trace, even at full Detail.
+  notice says the color's pieces are too small to trace, even at full Detail,
+  and to use an image where that color covers bigger areas.
   Raising Detail to where it stops helping used to clear the old notice with
   the color still gone; it now swaps to the new one.
 - **A traced image no longer keeps a speck too small to print.** Tidying a
