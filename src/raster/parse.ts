@@ -247,12 +247,15 @@ export function rasterSizeColorLossMessage(name: string, dropped: number): strin
   );
 }
 
-/** The dropped-color notice once Detail can't lower the floor and no placement pins it. No remedy: a bigger size can still lower a flat-art floor there, but no measured rule says when. */
+/** The dropped-color notice once Detail can't lower the floor and no placement pins it. The remedy is a different image, not a bigger size: a bigger size can still lower a flat-art floor there, but no measured rule says when. */
 export function rasterFullDetailColorLossMessage(name: string, dropped: number): string {
   return (
     `${dropped === 1 ? '1 color' : `${dropped} colors`} in "${name}" ` +
     `${dropped === 1 ? 'was' : 'were'} dropped. ` +
-    `${dropped === 1 ? 'Its' : 'Their'} pieces are too small to trace, even at full Detail.`
+    `${dropped === 1 ? 'Its' : 'Their'} pieces are too small to trace, even at full Detail. ` +
+    (dropped === 1
+      ? 'To keep it, use an image where that color covers bigger areas.'
+      : 'To keep them, use an image where those colors cover bigger areas.')
   );
 }
 
