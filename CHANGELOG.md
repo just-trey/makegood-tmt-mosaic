@@ -53,6 +53,15 @@ scripts/measure-clip-ink.test.ts`.
 
 ### Fixed
 
+- **`check:zone-occlusion` now looks at the four small chair zones.** Its
+  per-zone pass sampled on a 24px grid and needed ink on all four neighbors,
+  so a narrow fender rim (`wing-left`, `wing-right`) never counted, and the two
+  seat mount tops (`seat-left`, `seat-right`) are only visible from a higher
+  camera pitch than any of its five views reached. It now samples at 6px and
+  adds a sixth, higher view. `npm run build && MOSAIC_GPU=1 npm run
+check:zone-occlusion` on the chair went from 4 "produced no interior ink
+  sample" failures to none.
+
 - **`scripts/export-chair-examples.mjs` runs again.** Since #137 it timed out
   looking for a Fill select the chair does not offer. It now puts 3-color
   diagonal stripes on every zone as a Sticker and fails any zoned plate with
