@@ -221,8 +221,9 @@ function despeckle(
 
 /**
  * Rewrite one cell of the A,B/B,A whose top-left is `i`: the bottom-right one, or the bottom-left
- * when that strands a piece under the floor no label can take without making another. Never the top
- * two: either can remake an A,B/B,A the scan has passed. See docs/tech-debt.md for what still stays.
+ * when the bottom-right strands a piece under the floor no label can take without making another.
+ * Never the top two: either can remake an A,B/B,A the scan has passed. See docs/tech-debt.md for
+ * what still stays.
  */
 function breakChecker(labels: Int16Array, w: number, h: number, minArea: number, i: number): void {
   const checkerAt = (q: number) => {
