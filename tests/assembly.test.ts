@@ -2171,3 +2171,47 @@ describe('overlap warning against real placed artwork', () => {
     expect(overlapWarnings()).toEqual([]);
   });
 });
+
+describe('outlines whose halves cancel out', () => {
+  // An equal bow-tie: the two triangles wind opposite ways, so its net area is zero.
+  const bowTie = (x0: number) => [
+    { x: x0, y: 0 },
+    { x: x0 + 10, y: 10 },
+    { x: x0 + 10, y: 0 },
+    { x: x0, y: 10 },
+    { x: x0, y: 0 },
+  ];
+  const withBowTie = (parsed: ParsedSVG, x0: number): ParsedSVG => ({
+    ...parsed,
+    shapes: [...parsed.shapes, { fill: '#0000ff', loops: [bowTie(x0)], order: 1 }],
+  });
+  const cancelWarnings = () =>
+    WARNINGS.map((w) => w.message).filter((m) => m.includes('cancel out'));
+
+  it('names a design that is nothing but one, which leaves nothing to cut', async () => {
+    clearWarnings();
+    const parsed: ParsedSVG = {
+      shapes: [{ fill: '#0000ff', loops: [bowTie(0)], order: 0 }],
+      bbox: { minX: 0, minY: 0, maxX: 10, maxY: 10 },
+      rawSVGCircle: null,
+    };
+    expect(await buildAssemblyGeometry(baseInput({ parsed }))).toBeNull();
+    expect(cancelWarnings()).toEqual([
+      "1 outline crosses over itself and its halves cancel out, so it was left out. Redraw it as separate shapes that don't cross.",
+    ]);
+    expect(WARNINGS.every((w) => w.build)).toBe(true);
+  });
+
+  it('counts every design in one warning, while the rest still cuts', async () => {
+    clearWarnings();
+    const one = baseInput({ parsed: withBowTie(redSquareParsed(), 20) }).artworks[0];
+    const input = baseInput({
+      artworks: [one, { ...one, parsed: withBowTie(redSquareParsed(), 30), offX: 5 }],
+    });
+    const built = await buildAssemblyGeometry(input);
+    expect(built?.palette.map((p) => p.hex)).toEqual(['#ff0000']);
+    expect(cancelWarnings()).toEqual([
+      "2 outlines cross over themselves and their halves cancel out, so they were left out. Redraw them as separate shapes that don't cross.",
+    ]);
+  });
+});

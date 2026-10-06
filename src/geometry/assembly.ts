@@ -32,7 +32,7 @@ import { noticeBuild, warnBuild } from '../warnings';
 import { resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
 import { throwIfCancelled } from '../cancel';
-import { fillCoveredNotice } from './assemblyWarnings';
+import { cancelledOutlinesWarning, fillCoveredNotice } from './assemblyWarnings';
 import {
   isCuttable,
   newPartTally,
@@ -207,12 +207,15 @@ export async function buildAssemblyGeometry(
   // `byColor` pools each artwork's regions by hex, so color detection, merging, base assignment
   // and depth all see one palette across every design in the scene.
   const perArtworkColors: Record<string, PolyFeature>[] = [];
+  let cancelledOutlines = 0;
   for (let i = 0; i < artworks.length; i++) {
     const r = await computeNetRegionsByColor(artworks[i].parsed.shapes, (f) =>
       reportProgress(((i + f) / artworks.length) * 0.4),
     );
     perArtworkColors.push(r.byColor);
+    cancelledOutlines += r.cancelledOutlines;
   }
+  if (cancelledOutlines) warnBuild(cancelledOutlinesWarning(cancelledOutlines));
   const byColor: Record<string, PolyFeature> = {};
   for (const one of perArtworkColors)
     for (const [hex, feat] of Object.entries(one))

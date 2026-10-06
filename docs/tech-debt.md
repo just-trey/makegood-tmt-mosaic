@@ -872,3 +872,33 @@ Third consecutive review cycle (bloat, 2026-08-24 beta, [2026-10-06 beta](review
   stays after artwork loads; Advanced reads "plane offset 170.00mm, 271-pt boundary".
 - Hubcap size stated twice (field, then bold "Actual size 220.0 × 220.0 mm").
 - **Closing it**: one copy sweep against the vocabulary table.
+
+## An outline that crosses itself into equal halves is left out, not split at the crossing
+
+An equal bow-tie, figure-8 or infinity sign has a net area of zero: its lobes wind opposite ways.
+`shapeToFeature` ([src/geometry/regions.ts](../src/geometry/regions.ts)) drops any loop at or under
+`RING_AREA_FLOOR`, so the outline is not cut. `cancelsOut` names it in one build warning with a count
+(docs/troubleshooting.md). A browser fills both lobes.
+
+- **Seen in no real file.** 0 of 4,728 SVG loops over the fixtures, `public/templates` and `stubs/`,
+  and 0 of 6,250 traced loops over the raster corpus
+  (`node_modules/.bin/vite-node scripts/measure-cancelling-outlines.ts`).
+- The same run finds 10 SVG loops under the floor that do not cancel. All are in one `stubs/temp/`
+  file: Illustrator slivers drawn out and back, which the clipper's union finds empty.
+- **Unequal lobes reach the cut as one self-crossing ring**, nested by containment like any other.
+  Not measured against a browser's fill.
+- **The fill rule is not parsed.** `fill-rule` appears nowhere in [src/svg/parse.ts](../src/svg/parse.ts).
+  `nonzero` and `evenodd` agree on a figure-8; they disagree on a loop that winds twice.
+
+**Why deferred**: the bug was a silent drop. Warning on it closes rule 1; splitting has no real file
+asking for it.
+
+**Closing it**:
+
+1. Parse `fill-rule` onto `SVGShape`.
+2. Before nesting, resolve each self-crossing loop into simple rings under that rule. Manifold's
+   `CrossSection` takes `NonZero` or `EvenOdd`, as `repairSelfIntersections`
+   ([src/geometry/manifold.ts](../src/geometry/manifold.ts)) uses it; it needs the wasm loaded before
+   `computeNetRegionsByColor`, which is pure 2D today.
+3. Test: an equal bow-tie cuts both lobes, a twice-wound loop differs by rule. Then delete
+   `cancelsOut`, its warning and its troubleshooting section.

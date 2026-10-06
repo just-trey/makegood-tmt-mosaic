@@ -51,6 +51,25 @@ export function loopToRing(loop: Loop, forceCCW?: boolean): Ring | null {
   return ring;
 }
 
+/** Net area at or below which `shapeToFeature` drops a loop, in the shape's own units. */
+const RING_AREA_FLOOR = 1e-7;
+
+/**
+ * A loop `shapeToFeature` drops for its net area that still draws something: an equal bow-tie or
+ * figure-8, whose lobes wind opposite ways and sum to zero. A line or an out-and-back trace is empty
+ * in a browser too, so it is not one; the clipper's union tells the two apart.
+ */
+export function cancelsOut(loop: Loop): boolean {
+  if (Math.abs(signedArea(loop)) > RING_AREA_FLOOR) return false;
+  const ring = loopToRing(loop);
+  if (!ring) return false;
+  try {
+    return planarArea(fromGeom(polygonClipping.union([ring] as Ring[]))) > RING_AREA_FLOOR;
+  } catch {
+    return true; // can't tell it was empty, and it is dropped either way
+  }
+}
+
 /**
  * Turf (Multi)Polygon for one SVG shape. Holes by containment depth (odd = hole), not winding:
  * correct under both "nonzero" and "evenodd", where a hole can share its exterior's winding
@@ -68,7 +87,7 @@ export function loopToRing(loop: Loop, forceCCW?: boolean): Ring | null {
 export function shapeToFeature(shape: SVGShape): PolyFeature | null {
   const rings = shape.loops
     .map((l) => ({ raw: l, areaAbs: Math.abs(signedArea(l)) }))
-    .filter((r) => r.areaAbs > 1e-7);
+    .filter((r) => r.areaAbs > RING_AREA_FLOOR);
   if (!rings.length) return null;
   const n = rings.length;
 
@@ -848,9 +867,15 @@ export async function unionAllCooperative(
  */
 const COVERED_BATCH = 8;
 
+export interface NetRegions {
+  byColor: Record<string, PolyFeature>;
+  /** Loops left out because they `cancelsOut`. A count, not a warning: the build sums it over every design. */
+  cancelledOutlines: number;
+}
+
 /** Memo for the pass below, keyed on the parsed shapes' identity. */
 let regionsCacheKey: SVGShape[] | null = null;
-let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;
+let regionsCacheVal: NetRegions | null = null;
 let regionsCacheDiagnostics: string[] = [];
 
 /**
@@ -869,9 +894,7 @@ let regionsCacheDiagnostics: string[] = [];
 export async function computeNetRegionsByColor(
   shapes: SVGShape[],
   onProgress: (fraction: number) => void = reportProgress,
-): Promise<{
-  byColor: Record<string, PolyFeature>;
-}> {
+): Promise<NetRegions> {
   // `shapes` (ParsedSVG.shapes) is always assigned fresh from a parse and never mutated in place,
   // so identity is a safe cache key. Depth/fit/margin/color tweaks don't touch it at all.
   if (shapes === regionsCacheKey && regionsCacheVal) {
@@ -940,7 +963,8 @@ export async function computeNetRegionsByColor(
       }
     }
     onProgress(1); // artwork with no usable shapes never entered either loop
-    const result = { byColor };
+    const cancelledOutlines = shapes.reduce((n, s) => n + s.loops.filter(cancelsOut).length, 0);
+    const result = { byColor, cancelledOutlines };
     regionsCacheKey = shapes;
     regionsCacheVal = result;
     regionsCacheDiagnostics = diagnostics;

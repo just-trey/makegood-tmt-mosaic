@@ -1025,6 +1025,36 @@ grammar reads a flag as one character, so the `.0` left over is not a flag.
 The shorthand that glues a flag to the coordinate after it (`A5 5 0 1110 0`)
 is fine and parses.
 
+## Troubleshooting: "… outlines cross over themselves and their halves cancel out, so they were left out" warnings
+
+Full text: _"3 outlines cross over themselves and their halves cancel out, so
+they were left out. Redraw them as separate shapes that don't cross."_ With one
+outline it reads _"1 outline crosses over itself and its halves cancel out, so
+it was left out."_
+
+**What it means.** An outline in the SVG crosses over itself, and the two sides
+of the crossing are the same size: a figure-8, an infinity sign, a bow-tie with
+equal halves. One half runs clockwise and the other counter-clockwise, so their
+areas add up to zero and the app reads the outline as empty. Your editor fills
+both halves.
+
+**What you get.**
+
+- Those outlines are not cut. Everything else in the design is.
+- If they were the only shapes, no colors show and Export stays off.
+- One drawn as a hole inside another shape prints filled instead.
+- The count covers every design loaded.
+
+Halves of different sizes import fine, as do stars and subpaths that overlap.
+A zero-width sliver (a line, or an outline traced out and back) fills nothing
+in your editor either, so it is left out without a warning. A traced PNG or
+JPG has not been seen to raise this: none of 6,250 traced outlines over the
+raster corpus did (`node_modules/.bin/vite-node
+scripts/measure-cancelling-outlines.ts`).
+
+**What to do.** Redraw the outline as separate shapes that meet at the
+crossing, two teardrops for a figure-8, and load the SVG again.
+
 ## Troubleshooting: "The hubcap disc is too small to reach its mounting clips"
 
 Full text: _"The hubcap disc is too small to reach its mounting clips. They

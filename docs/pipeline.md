@@ -73,6 +73,10 @@ subtracted from that fill. 2D polygon overlap maths via Turf.js
 - **Depth is probed at an edge midpoint, never a corner.** A traced outline
   starts on a junction, where the inside/outside test is undefined. regions.ts
   records what probing there did.
+- **A ring with no net area is dropped.** That includes an equal bow-tie or
+  figure-8, whose lobes wind opposite ways and cancel; those get one counted
+  warning (`cancelsOut`). Splitting them at the crossing is in
+  [tech-debt.md](tech-debt.md).
 - Colours assigned to the base are dropped. Similar colours auto-merge (a ΔE
   slider, live and reversible) and combine with manual merges. Each merged slot
   prints its largest member's real colour, never a blend.
