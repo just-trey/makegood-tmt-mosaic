@@ -1,9 +1,10 @@
 # Round-trip measurement: mixed UI and geometry fix campaign (2026-10-06)
 
-**Round count rose slightly and the cause tally shifted to HARD.** Mean
-rounds per PR is 3.25 (4 PRs, #355-#358, 13 rounds) against 3.0 for the
-2026-10-05b campaign, 2.3 for the earlier 2026-10-05 one, 2.9 for 2026-09-24
-and the 2026-08 baseline's ~4.6 (11 PRs, #229-#243). Corrections per PR are
+**Rounds are down against the 2026-08 baseline and up slightly against the
+last campaign; the cause tally shifted to HARD.** Mean rounds per PR is 3.25
+(4 PRs, #355-#358, 13 rounds) against the 2026-08 baseline's ~4.6 (11 PRs,
+#229-#243), so down. Against 3.0 for the 2026-10-05b campaign it is up. The
+earlier 2026-10-05 campaign was 2.3 and 2026-09-24 was 2.9. Corrections per PR are
 5.5 against 3.0, 1.0 and 5.2. HARD (5) is new: the earlier 2026-10-05
 campaigns had none, and all five sit in #358's geometry code and script. One
 PR carries 13 of the 22 corrections. Four PRs, one of them a null result: a
@@ -35,7 +36,8 @@ tables pulled with `gh pr view <n> --json body,mergeCommit` for `n` in
   against 4.6.
 - Round 1 levels: `high` on the two `opus-high` PRs, `medium` on the two
   `sonnet-medium` PRs, `low` for later rounds and the prose pass.
-- Agent column is from the plan; the round-1 level in each body matches it.
+- Agent column is inferred from the round-1 level in each PR body: `high` is
+  `opus-high`, `medium` is `sonnet-medium`.
 
 ## 2. Corrections per round
 
@@ -281,5 +283,3 @@ npm run check:zone-occlusion` printed `FAILED (4)`. Its mutation is removing
   `docs/findings/2026-10-05-round-trip-measurement.md`,
   `docs/findings/2026-10-05-round-trip-measurement-b.md`.
 - Section counts and defects: `git show <merge-sha> -- docs/tech-debt.md`.
-- Campaign plan (agents, branches, review levels): `~/.claude/plans/crispy-jingling-hollerith.md`,
-  outside the repo.
