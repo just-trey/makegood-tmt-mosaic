@@ -76,20 +76,30 @@ never coded it); tallied on its own per the fix-campaign skill step 5.
 
 ## 6. Score per PR
 
-Defects closed = behaviour-layer corrections with a real cause (excludes
-TASTE and clean rows). Sections opened =
+Behaviour corrections = behaviour-layer corrections with a real cause
+(excludes TASTE and clean rows). It is not a count of tech-debt defects fixed.
+
+Defects closed = tech-debt defects the PR fixed. Counted from the PR body
+(`gh pr view <n> --json body`) and its tech-debt diff
+(`git show <merge-sha> -- docs/tech-debt.md`): one per distinct defect the
+body says it closed and the diff removed. A narrowed section counts only the
+defects it removed. A defect found on the way and fixed inline is the Fixed
+inline column, not this one. A defect measured but not fixed, or found not to
+reproduce, counts 0.
+
+Sections opened =
 `git show <merge-sha> -- docs/tech-debt.md | grep '^+## '`.
 
-| PR        | Defects closed | Sections opened | Fixed inline | Behaviour rounds | Prose rounds |
-| --------- | -------------- | --------------- | ------------ | ---------------- | ------------ |
-| #344      | 0              | 0               | -            | 1 (clean)        | 1 (1 DOC)    |
-| #345      | 0              | 0               | -            | 1 (clean)        | 1 (clean)    |
-| #346      | 1              | 0               | -            | 2 (1 VIS)        | 1 (1 DOC)    |
-| **Total** | **1**          | **0**           | **0**        | 4                | 3            |
+| PR        | Behaviour corrections | Defects closed | Sections opened | Fixed inline | Behaviour rounds | Prose rounds |
+| --------- | --------------------- | -------------- | --------------- | ------------ | ---------------- | ------------ |
+| #344      | 0                     | 1              | 0               | -            | 1 (clean)        | 1 (1 DOC)    |
+| #345      | 0                     | 1              | 0               | -            | 1 (clean)        | 1 (clean)    |
+| #346      | 1                     | 1              | 0               | -            | 2 (1 VIS)        | 1 (1 DOC)    |
+| **Total** | **1**                 | **3**          | **0**           | **0**        | 4                | 3            |
 
 - #346's round 1 is counted behaviour (a code review) and its DOC row prose;
   its prose pass shared the round. Totals are not additive to 7 rounds.
-- Each PR closed one tech-debt section and opened none. `docs/tech-debt.md`
+- Each PR closed one tech-debt section, one defect each, and opened none. `docs/tech-debt.md`
   went from 32 to 29 sections (`git show 928a716^:docs/tech-debt.md | grep -c '^## '`
   and `grep -c '^## ' docs/tech-debt.md` on `c09aa9e`).
 - Fixed inline: none identified. The bodies carry no second-defect bullet.

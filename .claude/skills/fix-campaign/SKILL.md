@@ -262,8 +262,11 @@ is the gate for docs-only PRs, which take no `/code-review` and otherwise reach
 `main` unreviewed: #268 is the worked example, an orphaned `(above)` and four
 stale counts caught only by the orchestrator read. Score each PR as defects
 closed / sections opened / fixed inline / behaviour rounds / prose rounds — not
-the tech-debt section count. First line states whether the round-count and
-cause-tally numbers moved. Include the null results and anything a live check
+the tech-debt section count. **Defects closed** is tech-debt defects the PR
+fixed, counted from its body and its `docs/tech-debt.md` diff; **behaviour
+corrections** is review corrections with a real cause. Report both as separate
+columns and never use one name for the other. First line states whether the
+round-count and cause-tally numbers moved. Include the null results and anything a live check
 caught that review did not. Pull the bodies with `gh pr view <n> --json body`;
 the report cites that command. Docs-only, so it ships without `/code-review`,
 but still goes through `ship-it` and a PR.
