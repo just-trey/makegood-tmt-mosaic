@@ -80,6 +80,30 @@ A pocket deeper than the wall under it cuts a hole through it and exports with n
 **Closing it** means cutting a sideways face along its own normal first. Its wall can then be measured
 the way the flat or the conformal mapper does it.
 
+## A chair wall clamp leaves 0.05mm, but the warped cutter's floor is only exact at its vertices
+
+**Unmeasured.** The bound is the wall sampled along -N̂, less `CUT_FLOOR_MM` (0.05mm). The warped
+cutter's floor is flat between vertices `WARP_REFINE_MM` (1.5mm) apart, so over convex curvature it
+dips below the curved floor between them.
+
+- Sag is L²/8r: 0.03mm at L = 1.5mm on a 10mm radius, under the floor. `FILL_REFINE_MM` (3mm) gives
+  0.11mm, but the chair withholds Fill.
+
+**Closing it** means measuring breakthrough per chart at its clamped depth, then widening the floor
+by the sag where it is needed.
+
+## A depth warning can name a cut that then failed
+
+`thinWallClamps` and `tooDeepClamps` are staged in `buildColorPrism`
+([src/geometry/colorPrism.ts](../src/geometry/colorPrism.ts)) before the cutter is built. If no
+cutter comes out, the colour also gets "Couldn't cut color … into …", while the depth warning still
+says "It was cut at … mm instead".
+
+- Old on flat faces. The chair body is new to it, where a warp that stays non-manifold at both
+  refinements (`ConformalZoneMapper.buildCutter`) leaves no cutter.
+
+**Closing it** means staging the clamp only for a region whose cutter was kept.
+
 ## Rebuild performance needs ongoing work — this is a heavy application
 
 The flat-mode half closed 2026-08-23. `computeNetRegionsByColor` now calls the clipping engine n-ary

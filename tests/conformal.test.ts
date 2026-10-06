@@ -8,6 +8,7 @@ import {
   type ManifoldAPI,
 } from '../src/geometry/manifold';
 import { canvasAnchor } from '../src/geometry/designScale';
+import { buildRayMesh, exitDistance } from '../src/geometry/wall';
 import type { DesignPlacement } from '../src/geometry/zones';
 import type { ParsedSVG, PolyFeature } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
@@ -358,6 +359,11 @@ describe('the wall under a region', () => {
     ]);
   });
 
+  it('leaves a region the clip failed on alone, as the flat wall does', () => {
+    const feat = rect(15, 5, 30, 20);
+    expect(walled().resolveCutRegions(feat, 5, { clipped: false })).toEqual([{ feat, depth: 5 }]);
+  });
+
   it('still bounds a stroke narrower than the wall samples are spaced', () => {
     // Between the v = 10 and v = 11 sample rows, so not one sample lies inside it.
     const [r] = walled().resolveCutRegions(rect(15, 10.3, 30, 10.6), 5);
@@ -370,6 +376,35 @@ describe('the wall under a region', () => {
     const feat = rect(15, 5, 30, 20);
     expect(m.resolveCutRegions(feat, 1)).toEqual([{ feat, depth: 1 }]);
     expect(m.resolveCutRegions(feat, 5)[0].wall).toBeCloseTo(3, 1);
+  });
+});
+
+describe('exitDistance', () => {
+  /** A 200mm square, 3mm thick: a fine bottom so the triangle count shrinks the grid cell. */
+  const slab = (): Float32Array => {
+    const out: number[] = [];
+    const N = 280,
+      S = 200,
+      q = S / N;
+    for (let i = 0; i < N; i++)
+      for (let j = 0; j < N; j++) {
+        const [x0, z0, x1, z1] = [i * q, j * q, (i + 1) * q, (j + 1) * q];
+        out.push(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z0, x1, 0, z1, x0, 0, z1);
+      }
+    out.push(0, 3, 0, 0, 3, S, S, 3, S, 0, 3, 0, S, 3, S, S, 3, 0);
+    return Float32Array.from(out);
+  };
+
+  it('reaches every part of a mesh fine enough to cap the grid', () => {
+    // 156,802 triangles: about two per cell would be a 0.72mm cell, 186mm across 256 of them.
+    expect(exitDistance(buildRayMesh(slab()), [198, 3, 198], [0, -1, 0], 5)).toBeCloseTo(3, 6);
+  });
+
+  it('gives up on a ray it cannot place instead of walking forever', () => {
+    const mesh = buildRayMesh(makeSteppedShell(3, 10));
+    // Every axis moving: an axis the ray doesn't move along stops the walk on its own.
+    expect(exitDistance(mesh, [NaN, 10, 20], [0.6, -0.48, 0.64], 5)).toBe(Infinity);
+    expect(exitDistance(mesh, [10, 10, 20], [NaN, NaN, NaN], 5)).toBe(Infinity);
   });
 });
 

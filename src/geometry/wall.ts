@@ -328,7 +328,8 @@ export function buildRayMesh(positions: Float32Array): RayMesh {
   const ext = max.map((m, a) => Math.max(m - min[a], 1e-6));
   // About two triangles per occupied cell: a surface mesh fills cells by area, not volume.
   const area = ext[0] * ext[1] + ext[1] * ext[2] + ext[0] * ext[2];
-  const cell = Math.max(Math.sqrt((2 * area) / Math.max(n, 1)), 0.25);
+  // No smaller than 256 cells spans: a capped axis on a finer cell left part of the mesh off the grid.
+  const cell = Math.max(Math.sqrt((2 * area) / Math.max(n, 1)), 0.25, ...ext.map((e) => e / 256));
   const dims = ext.map((e) => Math.min(256, Math.max(1, Math.ceil(e / cell))));
   const idx = (c: number, a: number): number =>
     Math.min(dims[a] - 1, Math.max(0, Math.floor((c - min[a]) / cell)));
@@ -399,7 +400,8 @@ export function exitDistance(
     t0 = Math.max(t0, Math.min(ta, tb));
     t1 = Math.min(t1, Math.max(ta, tb));
   }
-  if (t0 > t1) return Infinity;
+  // Negated so a NaN origin or direction stops here rather than walking cells forever.
+  if (!(t0 <= t1)) return Infinity;
   const cur = [0, 1, 2].map((a) =>
     Math.min(dims[a] - 1, Math.max(0, Math.floor((o[a] + t0 * d[a] - min[a]) / cell))),
   );
@@ -428,21 +430,34 @@ export function exitDistance(
       if (hit > AT_SURFACE_MM && hit <= reach) hits.push(facing > 0 ? hit : -hit);
     }
     const a = tNext[0] < tNext[1] ? (tNext[0] < tNext[2] ? 0 : 2) : tNext[1] < tNext[2] ? 1 : 2;
+    // Every hit nearer than the next cell is in hand, so an exit settled by then is final.
+    const settled = firstExit(hits, tNext[a], maxT);
+    if (settled != null) return settled;
     if (tNext[a] > t1) break;
     cur[a] += step[a];
     if (cur[a] < 0 || cur[a] >= dims[a]) break;
     tNext[a] += tDelta[a];
   }
+  return firstExit(hits, Infinity, maxT) ?? Infinity;
+}
+
+/**
+ * The first exit not re-entered within REENTRY_GAP_MM, from signed hits all known nearer than
+ * `upTo`; null while an exit still could be.
+ */
+function firstExit(hits: number[], upTo: number, maxT: number): number | null {
   hits.sort((p, q) => Math.abs(p) - Math.abs(q));
-  for (let i = 0; i < hits.length; i++) {
+  for (let i = 0; i < hits.length && Math.abs(hits[i]) < upTo; i++) {
     const t = hits[i];
-    if (t < 0 || t > maxT) continue;
+    if (t < 0) continue;
+    if (t > maxT) return Infinity;
+    if (t + REENTRY_GAP_MM > upTo) return null;
     let back = false;
     for (let j = i + 1; j < hits.length && Math.abs(hits[j]) < t + REENTRY_GAP_MM; j++)
       if (hits[j] < 0) back = true;
     if (!back) return t;
   }
-  return Infinity;
+  return upTo === Infinity ? Infinity : null;
 }
 
 /** Möller-Trumbore, two-sided: the caller has already picked the side. */
@@ -497,11 +512,9 @@ export function sortSampledWall(f: Omit<SampledWall, 'order'>): SampledWall {
 }
 
 /**
- * The thinnest wall under a region, or Infinity: the samples inside it, then its outline every
- * `step`. An outline point reads the four samples round it, so a stroke too narrow to hold one is
- * still bounded. Where one of those is off the chart, the point is near the chart's edge, where the
- * wall can fall fast, so `atEdge` measures the point itself: chair-handle-left reads 4.61mm without
- * it, 2.03mm with (scripts/measure-wall.ts).
+ * The thinnest wall under a region: the samples in it, then its outline every `step`, each point
+ * reading the four samples round it. Where one is off the chart the wall can fall fast, so `atEdge`
+ * measures the point itself: chair-handle-left reads 4.61mm without it, 2.03 with (measure-wall.ts).
  */
 export function minSampledWallUnder(
   f: SampledWall,

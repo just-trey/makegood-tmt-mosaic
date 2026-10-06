@@ -26,6 +26,7 @@ import { warn } from '../warnings';
 import {
   rotatePointY,
   type CutRegion,
+  type CutRegionOptions,
   type NetExclusion,
   type CutterOptions,
   type DesignPlacement,
@@ -636,7 +637,9 @@ export class ConformalZoneMapper implements ZoneMapper {
    * and no edge rule: this part's share of a chart ends at a seam against the neighbouring printed
    * piece, not at an outer wall anyone sees. The wall is measured along -N̂, the way the warp cuts.
    */
-  resolveCutRegions(feat: PolyFeature, depthSetting: number): CutRegion[] {
+  resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[] {
+    // As the flat wall: an unclipped region reaches off the chart, onto walls it won't cut.
+    if (opts?.clipped === false) return [{ feat, depth: depthSetting }];
     const wall = this.wallUnder(feat, depthSetting + CUT_FLOOR_MM);
     const bound = Math.max(wall - CUT_FLOOR_MM, MIN_CUT_DEPTH_MM);
     if (depthSetting <= bound || !depthDiffers(bound, depthSetting))
@@ -665,9 +668,10 @@ export class ConformalZoneMapper implements ZoneMapper {
     if (!mesh) rayMeshes.set(positions, (mesh = buildRayMesh(positions)));
     const cached = sampledWalls.get(this.chart);
     let field = cached?.positions === positions ? cached.field : null;
-    // Rays stop at `cap`, so a deeper setting than any before re-measures from scratch.
+    // Rays stop at `cap`, so a deeper setting than any before re-measures; doubling keeps a depth
+    // raised a step at a time from re-measuring at every step.
     if (!field || field.cap < cap) {
-      field = this.sampleWall(mesh, cap);
+      field = this.sampleWall(mesh, Math.max(cap, 2 * (field?.cap ?? 0)));
       sampledWalls.set(this.chart, { positions, field });
     }
     const m = mesh;
