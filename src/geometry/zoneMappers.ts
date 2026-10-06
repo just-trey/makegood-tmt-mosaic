@@ -21,7 +21,9 @@ export function zoneMappersFor(
   // A baked zone always carries its chart (the sidecar loader only attaches resolved ones), so a
   // chartless entry means the chart failed to reconstruct — skip it rather than silently cutting
   // that zone's artwork onto the part's unrelated flat patch.
-  return part.zones.flatMap((z) => (z.chart ? [new ConformalZoneMapper(wasm, z.chart, z.id)] : []));
+  return part.zones.flatMap((z) =>
+    z.chart ? [new ConformalZoneMapper(wasm, z.chart, z.id, part.positions)] : [],
+  );
 }
 
 /** The mapper the on-face gizmo reads its frame from: a part's first (or only) design zone. */

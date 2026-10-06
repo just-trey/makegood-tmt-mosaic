@@ -53,6 +53,13 @@ scripts/measure-clip-ink.test.ts`.
 
 ### Fixed
 
+- **A depth deeper than the chair's wall no longer cuts through it.** The
+  chair body had no depth limit at all: 20 mm over a whole side split two of
+  its four parts in two, with no warning. Each colour is now cut 0.05 mm short
+  of the thinnest wall under it, measured along the curved surface, and the
+  "… mm thick under it" warning names the part. The thinnest wall under any
+  chair zone is 2.03 mm, so the default 1 mm depth is unchanged
+  (`node_modules/.bin/vite-node scripts/measure-wall.ts`).
 - **`check:zone-occlusion` now looks at the four small chair zones.** Its
   per-zone pass sampled on a 24px grid and needed ink on all four neighbors,
   so a narrow fender rim (`wing-left`, `wing-right`) never counted, and the two
@@ -61,7 +68,6 @@ scripts/measure-clip-ink.test.ts`.
   adds a sixth, higher view. `npm run build && MOSAIC_GPU=1 npm run
 check:zone-occlusion` on the chair went from 4 "produced no interior ink
   sample" failures to none.
-
 - **`scripts/export-chair-examples.mjs` runs again.** Since #137 it timed out
   looking for a Fill select the chair does not offer. It now puts 3-color
   diagonal stripes on every zone as a Sticker and fails any zoned plate with

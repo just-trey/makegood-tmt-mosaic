@@ -137,12 +137,11 @@ Detail on any of these: [docs/pipeline.md](docs/pipeline.md) and
   the Advanced per-part controls.
 - A part that isn't a watertight mesh can't be cut. It exports uncut, with a
   warning.
-- On the chair body, and on a sideways face picked by hand, nothing bounds a
-  depth: a pocket deeper than the wall cuts a hole clean through. The default
-  faces of the wheel, footrest and hubcap cut a too-deep pocket at the wall
-  under it instead, with a warning naming the color and the part. A zero or
-  negative depth is caught up front and raised to a safe minimum. See
-  [docs/tech-debt.md](docs/tech-debt.md).
+- On a sideways face picked by hand, nothing bounds a depth: a pocket deeper
+  than the wall cuts a hole clean through. Every default face and every chair
+  zone cut a too-deep pocket at the wall under it instead, with a warning
+  naming the color and the part. A zero or negative depth is caught up front and
+  raised to a safe minimum. See [docs/tech-debt.md](docs/tech-debt.md).
 - Fill can't repeat a very detailed design. Past 600k points across the copies
   the design is placed once, with a warning: the cut ran out of memory at 720k on
   the one part measured. Raising Scale fixes it where a bigger tile gets under

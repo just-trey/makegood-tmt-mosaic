@@ -67,24 +67,62 @@ non-square bed of the three.
 - The caster plates stay on `suggestTowerPos` in [src/export/threemf.ts](../src/export/threemf.ts),
   which is correct: they print one filament and get no tower.
 
-## A depth on the chair body, or on a face the Y axis can't measure, has no upper bound
+## A depth on a flat face the Y axis can't measure has no upper bound
 
-A pocket deeper than the wall cuts a hole through it and exports with no depth warning. How thin the
-chair's walls get is **unmeasured**.
+A pocket deeper than the wall under it cuts a hole through it and exports with no depth warning.
 
-- A flat face bounds each colour region by the wall under it (`FlatZoneMapper.boundByWall`), inside the
-  part-wide bound (`maxCutDepth`).
-- A conformal zone declines both and raises nothing. Its cut follows a normal field, so there is no one
-  axis to measure along.
-- A flat face declines both when its normal is not near Y or its plane lands off the mesh. Such a face
-  already gets the "isn't vertical" warning, but not a depth one. In `scripts/measure-wall.ts`'s table:
-  the wheel's ranks 3-5, the footrest's 2-5.
-- Every shipped default face is flat and bounded: wheel, footrest and hubcap
-  (`node_modules/.bin/vite-node scripts/measure-wall.ts`). The chair body is the one shipped part with
-  conformal zones.
+- A flat face declines both depth bounds when its normal is not near Y or its plane lands off the mesh.
+  In `scripts/measure-wall.ts`'s table: the wheel's ranks 3-5, the footrest's 2-5.
+- No shipped default face is one of them. The part panel offers them as alternatives.
+- Such a face already gets the "isn't vertical" warning: its cutter extrudes down Y, not along the
+  face's normal, so the cut itself is wrong there, depth or not.
 
-**Closing it** means measuring the material behind each point of a region along the normal the warp
-cuts it at, then clamping and warning the way the flat mapper does.
+**Closing it** means cutting a sideways face along its own normal first. Its wall can then be measured
+the way the flat or the conformal mapper does it.
+
+## A chair wall clamp leaves 0.05mm, but the warped cutter's floor is only exact at its vertices
+
+**Unmeasured.** The bound is the wall sampled along -N̂, less `CUT_FLOOR_MM` (0.05mm). The warped
+cutter's floor is flat between vertices `WARP_REFINE_MM` (1.5mm) apart, so over convex curvature it
+dips below the curved floor between them.
+
+- Sag is L²/8r: 0.03mm at L = 1.5mm on a 10mm radius, under the floor. `FILL_REFINE_MM` (3mm) gives
+  0.11mm, but the chair withholds Fill.
+
+**Closing it** means measuring breakthrough per chart at its clamped depth, then widening the floor
+by the sag where it is needed.
+
+## A depth warning can name a cut that then failed
+
+`thinWallClamps` and `tooDeepClamps` are staged in `buildColorPrism`
+([src/geometry/colorPrism.ts](../src/geometry/colorPrism.ts)) before the cutter is built. If no
+cutter comes out, the colour also gets "Couldn't cut color … into …", while the depth warning still
+says "It was cut at … mm instead".
+
+- Old on flat faces. The chair body is new to it, where a warp that stays non-manifold at both
+  refinements (`ConformalZoneMapper.buildCutter`) leaves no cutter.
+
+**Closing it** means staging the clamp only for a region whose cutter was kept.
+
+## Cutting the chair's left fender adds handles to it at the default depth
+
+A design over the whole left side, cut 1mm deep, raises chair-wing-left's genus from 0 to 4 and leaves
+4 zero-volume pieces beside it. A recess should change neither. The other three left parts keep their
+genus. Run `node_modules/.bin/vite-node scripts/measure-cut-genus.ts [zone] [depthMm]`:
+
+| Depth | chair-wing-left genus | zero-volume pieces |
+| ----- | --------------------- | ------------------ |
+| 1mm   | 0 -> 4                | 4                  |
+| 3mm   | 0 -> 5                | 5                  |
+
+- Still one solid over 1mm³ at both depths, so no piece is cut off.
+- Whether the handles print as anything is **unmeasured**: they could be slivers on the surface or
+  real tunnels. The other zones are unmeasured too.
+- Probably not the depth: at the 3.35mm wall clamp this part's cutter had as much volume outside
+  the part as at 1mm. That came from a throwaway script and can't be reproduced.
+
+**Closing it** means finding where the handles sit (`decompose` the cut body, then compare the cutter
+with the part around them) and deciding whether the warp or the boolean makes them.
 
 ## Rebuild performance needs ongoing work — this is a heavy application
 

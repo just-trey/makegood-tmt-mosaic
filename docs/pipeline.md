@@ -172,10 +172,11 @@ pair of numbers, naming every region raised to that pair. A positive depth
 thinner than a layer is honoured and only noted: a real choice on a fine-layer
 profile.
 
-**The deep end is bounded twice, by the part and by the wall under each
-region.** Both measure along Y, the axis the cutter extrudes down, and both stop
-`CUT_FLOOR_MM` (0.05 mm) short so a clamped cut stays a recess rather than
-landing coplanar with the back face.
+**The deep end is bounded twice on a flat face, by the part and by the wall
+under each region.** Both measure along Y, the axis the cutter extrudes down, and
+both stop `CUT_FLOOR_MM` (0.05 mm) short so a clamped cut stays a recess rather
+than landing coplanar with the back face. A conformal zone has the wall bound
+only, measured along its normals (below).
 
 - **The part**: `ZoneMapper.maxCutDepth()`, how far the whole part reaches behind
   its design face. Past it the cut is clamped and the warning names the part.
@@ -191,14 +192,35 @@ landing coplanar with the back face.
 - An edge slice and a cut-through part keep their own depth. Neither is at the
   setting, and both cut through on purpose.
 
-**Three cases decline both bounds instead of guessing**, returning `Infinity` and
-warning nothing: a conformal zone (it cuts along a normal field, not one axis), a
-face whose normal is not substantially along Y or whose plane lands off the mesh,
-and a part too thin to hold the minimum. The wall alone also skips a region the
-face clip failed on, since it reaches past the face. A wall thinner than the
-0.20 mm minimum recess clamps to that minimum rather than declining: declining
-let a region touching one undercut edge take the full setting through the plate
-beside it. What stays unbounded is in [tech-debt.md](tech-debt.md).
+**Two cases decline both bounds instead of guessing**, returning `Infinity` and
+warning nothing: a face whose normal is not substantially along Y or whose plane
+lands off the mesh, and a part too thin to hold the minimum. The wall alone also
+skips a region the face clip failed on, since it reaches past the face. A wall
+thinner than the 0.20 mm minimum recess clamps to that minimum rather than
+declining: declining let a region touching one undercut edge take the full
+setting through the plate beside it. What stays unbounded is in
+[tech-debt.md](tech-debt.md).
+
+**A conformal zone bounds each region by the wall along -N̂**, the direction the
+warp cuts, with the same floor, minimum and warning as the flat wall
+([conformal.ts](../src/geometry/conformal.ts),
+[wall.ts](../src/geometry/wall.ts)). It has no part-wide bound: a normal field has
+no one axis to measure the part along.
+
+- **Sampled, not exact.** The cut direction varies over the chart, so there is no
+  one projection to measure in. Rays are cast every 1 mm of the chart, plus along
+  the region's outline wherever it nears the chart's edge, where the wall falls
+  fastest.
+- A sample's wall is the distance to the first surface the ray leaves the part
+  through and doesn't re-enter within a nozzle width. The chair has shallow
+  grooves along some chart edges that the ray otherwise reads as the back.
+- The thinnest wall under any chair chart's whole clip is 2.03 mm, at the
+  handles' edges, so the default 1 mm depth is never cut short there
+  (`node_modules/.bin/vite-node scripts/measure-wall.ts`).
+- Samples are kept per chart between builds. A setting deeper than their cap
+  re-measures at the larger of it and double the cap. The first build to cut a
+  chart pays for it: about 2 s across every chair chart with rays capped at
+  50 mm (same script).
 
 **Rotated copies** are supported (a wheel's two halves): the slice of the design
 landing on the copy is mapped back into the part's own print orientation.

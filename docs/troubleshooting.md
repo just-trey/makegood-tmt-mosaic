@@ -577,7 +577,7 @@ recess, no inlay, no message.
   -1 on another are separate facts, and each names its own colours.
 - **The deep end is checked separately**, against the part and the wall under
   each colour. See "… deeper than "Wheel top" goes" and "… mm thick under it"
-  below. On the chair body nothing checks it.
+  below. On the chair body only the wall is checked.
 
 ## Troubleshooting: "TMT Mosaic couldn't save this session. Leaving now loses it" warnings
 
@@ -1380,7 +1380,8 @@ both cases are read straight from the code:**
   - No mesh loaded yet.
   - **Every part on a baked design surface** (the chair body is the only
     shipped example): a curved chart has no single axis to measure a depth
-    against, unlike a flat patch.
+    against, unlike a flat patch. The wall under each colour is still checked
+    there: "… mm thick under it" below.
 - **A limit applies, but nothing was cut at it.** The clamped number is
   computed, but the part discards it, so nothing in the message would be true:
   - **A cut-through part** (the wheel's cap) ignores the setting and holes a
@@ -1410,6 +1411,9 @@ number ("cut at … ").
   cut to the thinnest.
 - The shipped hubcap is the usual case: 8.12 mm deep at its clips, but a 3 mm
   shell everywhere else.
+- On the chair body the wall is measured along the curved surface, the way the
+  cut follows it. Its thinnest is 2.03 mm, at the handles' edges, so the default
+  1 mm depth is never cut short.
 
 **What to do.** Nothing, if a recess this deep is fine. For a deeper pocket where
 the part is thicker, give that area its own colour. A colour that never reaches
@@ -1417,7 +1421,9 @@ the thin spot keeps its full depth.
 
 **When it stays quiet**, and a pocket can still break through:
 
-- **The chair body.** Its curved zones aren't measured.
+- **A thin spot under 1 mm across on the chair body.** Its wall is sampled every
+  1 mm, plus along each colour's outline near a zone's edge, so a spot that
+  narrow can fall between samples.
 - **The part-wide checks declined.** The same cases as "… deeper than "Wheel
   top" goes" above: a sideways or tilted face, a face plane off the part.
 - **Cut-through parts and edge regions.** They go the whole way through on

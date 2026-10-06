@@ -373,15 +373,15 @@ export interface ZoneMapper {
   /**
    * How a placed, clipped region gets cut: one entry per depth, each with its slice. Usually one
    * pass-through; a cut-through zone replaces the depth, an edge rule splits off polygons on the
-   * outer wall, and a flat zone cuts shallower where the wall is thinner. Regions, not a bare
+   * outer wall, and a region cuts shallower where the wall under it is thinner. Regions, not a bare
    * depth, so nothing upstream knows the zone kind. Never empty: a region always gets cut somehow.
    */
   resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[];
   /**
    * The deepest setting worth handing this zone, or Infinity where it cannot say. Only the zone
    * knows its cut direction: a flat one measures behind its normal; a conformal one cuts along a
-   * normal field and declines. **A bound on the part, not its wall** (resolveCutRegions' business,
-   * bounding only where this does).
+   * normal field and declines. **A bound on the part, not its wall**: resolveCutRegions' business,
+   * on a flat zone only where this measured something, on a conformal one always.
    */
   maxCutDepth(): number;
   /** build the cutter geometry from a placed+clipped 2D feature */

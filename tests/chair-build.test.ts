@@ -655,3 +655,90 @@ describe('a design that lands only on hidden surface', () => {
     );
   }, 180000);
 });
+
+describe('a depth deeper than the chair wall', () => {
+  // A design over the whole side reaches walls 2.03-4.00mm thick along their normals on its four
+  // parts (scripts/measure-wall.ts), so 20mm uncut would go through every one.
+  const ZONE = 'left';
+  const DEPTH = 20;
+
+  it('is cut at the wall under the design, and each part it was cut short on is named', async () => {
+    clearWarnings();
+    const zone = sidecar.zones.find((z) => z.id === ZONE)!;
+    const parts: AssemblyPart[] = [];
+    for (const c of zone.charts) {
+      const mesh = await loadPacked(c.libraryPartId);
+      const zones = zonesFor(c.libraryPartId, mesh).filter((z) => z.id === ZONE);
+      parts.push(chairPart(c.libraryPartId, mesh, zones));
+    }
+    const build = await buildAssemblyGeometry({
+      ...chairInput(parts, 600, [{ zoneId: ZONE }]),
+      globalDepth: DEPTH,
+    });
+    const messages = WARNINGS.map((w) => w.message);
+    const wasm = await getManifold();
+    let cut = 0;
+    for (const part of parts) {
+      const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
+      if (!Object.keys(out.inlaySoups).length) continue;
+      cut++;
+      const said = messages.find((m) => m.includes(`but "${part.name}" is only`));
+      expect(said, `no wall warning for ${part.name}: ${messages.join(' | ')}`).toBeDefined();
+      const [, wall, cutAt] = said!.match(
+        /is only ([\d.]+) mm thick under it\. It was cut at ([\d.]+) mm/,
+      )!;
+      expect(Number(cutAt)).toBeLessThan(Number(wall));
+      expect(Number(wall)).toBeLessThan(DEPTH);
+      // A cut through the wall splits chair-wing-left and chair-wheel-mount-left in two. Not genus:
+      // the cut leaves zero-volume slivers on the surface at any depth, 1mm included.
+      const after = soupToManifold(wasm, out.bodySoup);
+      expect(manifoldIsValid(after)).toBe(true);
+      const pieces = after.decompose();
+      expect(pieces.filter((s) => s.volume() > 1).length, part.name).toBe(1);
+      for (const s of pieces) s.delete();
+      after.delete();
+    }
+    expect(cut, `not every part was cut: ${messages.join(' | ')}`).toBe(parts.length);
+  }, 240000);
+
+  // chair-handle-left thins from 4-5mm a millimetre in to 2.03mm at its chart's edge, which a 1mm
+  // grid of samples alone reads as 4.61mm.
+  it('measures a design reaching a chart edge at the edge itself', async () => {
+    const mesh = await loadPacked('chair-handle-left');
+    const zone = zonesFor('chair-handle-left', mesh).find((z) => z.id === ZONE)!;
+    const mapper = new ConformalZoneMapper(null, zone.chart!, ZONE, mesh.positions);
+    const [r] = mapper.resolveCutRegions(mapper.boundary()!, DEPTH);
+    expect(r.wall).toBeCloseTo(2.03, 2);
+    expect(r.depth).toBeCloseTo(1.98, 2);
+  });
+
+  // The thinnest wall under any chart's whole clip is 2.03mm (scripts/measure-wall.ts). The groove
+  // lips on chair-storage-right and chair-wing-left are what exitDistance's plane test and re-entry
+  // gap each skip; either removed fails a case here.
+  it.each(sidecar.zones.flatMap((z) => z.charts.map((c) => [z.id, c.libraryPartId] as const)))(
+    'leaves the default depth alone across all of %s on %s',
+    async (zoneId, partId) => {
+      const mesh = await loadPacked(partId);
+      const zone = zonesFor(partId, mesh).find((z) => z.id === zoneId)!;
+      const mapper = new ConformalZoneMapper(null, zone.chart!, zoneId, mesh.positions);
+      const clip = mapper.boundary()!;
+      expect(mapper.resolveCutRegions(clip, 1)).toEqual([{ feat: clip, depth: 1 }]);
+      // Nudged 0.02mm each way, so somewhere the outline runs just inside each lip, not on it.
+      for (const [du, dv] of [
+        [0.02, 0],
+        [-0.02, 0],
+        [0, 0.02],
+        [0, -0.02],
+      ]) {
+        const g = clip.geometry;
+        const polys = (g.type === 'Polygon' ? [g.coordinates] : g.coordinates) as number[][][][];
+        const moved = turf.multiPolygon(
+          polys.map((rings) => rings.map((ring) => ring.map(([u, v]) => [u + du, v + dv]))),
+        ) as PolyFeature;
+        expect(mapper.resolveCutRegions(moved, 1), `moved ${du}, ${dv}`).toEqual([
+          { feat: moved, depth: 1 },
+        ]);
+      }
+    },
+  );
+});

@@ -8,6 +8,9 @@
 // hubcap at its default diameter. "wall" is the thinnest wall anywhere under the whole face, so a
 // region cut deeper than it goes through somewhere; "bound" is maxCutDepth(), Infinity where the
 // face declines.
+//
+// Then every chart of the chair body, measured the way `ConformalZoneMapper.resolveCutRegions`
+// does: sampled along -N̂, under the chart's whole cut clip, as a Fill covering the zone would be.
 import { JSDOM } from 'jsdom';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
@@ -34,6 +37,12 @@ const { applyAsmPatchChoice } = await import('../src/assembly/parts');
 const { FlatZoneMapper } = await import('../src/geometry/zones');
 const { buildWallField, minWallUnder } = await import('../src/geometry/wall');
 const { buildHubcapBody, HUBCAP_DEFAULT_DIAMETER_MM } = await import('../src/geometry/hubcap');
+const { ConformalZoneMapper, WALL_SAMPLE_MM } = await import('../src/geometry/conformal');
+const { reconstructChart } = await import('../src/geometry/zoneCharts');
+const { read3MFIndexed } = (await import(
+  // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
+  './lib/zonebake.mjs'
+)) as { read3MFIndexed: (buf: Buffer) => Promise<{ verts: number[][]; tris: number[][] }> };
 
 const PATCHES_PER_PART = 6;
 
@@ -133,4 +142,45 @@ console.log('\nQuery time against region size, wheel-half rank 0\n');
       `${String(count).padStart(5)} polygons, ${String(count * 10).padStart(5)} edges: ${(performance.now() - t0).toFixed(1)} ms`,
     );
   }
+}
+
+// Rays stop here, so a wall past it prints as Infinity; deeper than any chair wall under a seat.
+const CHAIR_CAP_MM = 50;
+console.log(
+  `\nThinnest wall under each chair chart's cut clip, along -N, sampled every ${WALL_SAMPLE_MM}mm\n`,
+);
+console.log('zone / part                            wall   first ms');
+console.log('-'.repeat(56));
+{
+  const sidecar = JSON.parse(
+    readFileSync(path.join(REPO, 'public', 'stl', 'chair-body-zones.json'), 'utf8'),
+  ) as import('../src/geometry/zoneCharts').ZoneSidecar;
+  const meshes = new Map<string, { vertices: Float32Array; positions: Float32Array }>();
+  for (const zone of sidecar.zones)
+    for (const chart of zone.charts) {
+      const id = chart.libraryPartId;
+      let mesh = meshes.get(id);
+      if (!mesh) {
+        const m = await read3MFIndexed(readFileSync(path.join(REPO, 'public', 'stl', `${id}.3mf`)));
+        const vertices = new Float32Array(m.verts.length * 3);
+        m.verts.forEach((v, i) => vertices.set(v, i * 3));
+        const positions = new Float32Array(m.tris.length * 9);
+        m.tris.forEach((t, i) => t.forEach((vi, k) => positions.set(m.verts[vi], i * 9 + k * 3)));
+        meshes.set(id, (mesh = { vertices, positions }));
+      }
+      const mapper = new ConformalZoneMapper(
+        null,
+        reconstructChart(zone, chart, mesh.vertices),
+        zone.id,
+        mesh.positions,
+      );
+      const clip = mapper.boundary();
+      // The first chart of a part also pays for bucketing the part's triangles.
+      const t0 = performance.now();
+      const [r] = clip ? mapper.resolveCutRegions(clip, CHAIR_CAP_MM) : [];
+      const ms = performance.now() - t0;
+      console.log(
+        `${`${zone.id} / ${id}`.padEnd(36)} ${fmt(r?.wall ?? Infinity).padStart(8)}  ${ms.toFixed(0).padStart(6)}`,
+      );
+    }
 }

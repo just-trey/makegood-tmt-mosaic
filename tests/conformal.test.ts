@@ -8,11 +8,19 @@ import {
   type ManifoldAPI,
 } from '../src/geometry/manifold';
 import { canvasAnchor } from '../src/geometry/designScale';
+import { buildRayMesh, exitDistance } from '../src/geometry/wall';
 import type { DesignPlacement } from '../src/geometry/zones';
 import type { ParsedSVG, PolyFeature } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 
-import { ARC_U, cylinderPoint, H, makeCylinderChart, R } from './lib/cylinderChart';
+import {
+  ARC_U,
+  cylinderPoint,
+  H,
+  makeCylinderChart,
+  makeSteppedShell,
+  R,
+} from './lib/cylinderChart';
 
 function squareAt(cu: number, cv: number, half: number): PolyFeature {
   return turf.polygon([
@@ -277,7 +285,7 @@ describe('boundary', () => {
     expect(ring).toContainEqual([ARC_U, H]);
   });
 
-  it('passes the depth setting through unchanged, in one piece', () => {
+  it('passes the depth setting through unchanged, in one piece, with no part mesh to measure', () => {
     // A conformal zone has no cut-through mode and no edge rule: its boundary is a seam against
     // the neighbouring printed piece, not an outer wall, so it never splits a region.
     const feat = {
@@ -295,6 +303,108 @@ describe('boundary', () => {
     expect(e.minY).toBeCloseTo(0, 4);
     expect(e.maxX).toBeCloseTo(ARC_U, 3);
     expect(e.maxY).toBeCloseTo(H, 3);
+  });
+});
+
+describe('the wall under a region', () => {
+  // 3mm thick below v = H/2, 10mm above, measured radially: the direction the warp cuts.
+  const shell = makeSteppedShell(3, 10);
+  const walled = (): ConformalZoneMapper =>
+    new ConformalZoneMapper(wasm, makeCylinderChart(), 'side', shell);
+  const rect = (u0: number, v0: number, u1: number, v1: number): PolyFeature =>
+    turf.polygon([
+      [
+        [u0, v0],
+        [u1, v0],
+        [u1, v1],
+        [u0, v1],
+        [u0, v0],
+      ],
+    ]) as PolyFeature;
+
+  it('is a closed solid, so a wall measured through it means something', () => {
+    const solid = soupToManifold(wasm, shell);
+    expect(manifoldIsValid(solid)).toBe(true);
+    solid.delete();
+  });
+
+  it('cuts a pocket deeper than the wall at the wall, less the floor, and says how thick it was', () => {
+    const feat = rect(15, 5, 30, 20);
+    const [r, ...rest] = walled().resolveCutRegions(feat, 5);
+    expect(rest).toHaveLength(0);
+    expect(r.feat).toBe(feat);
+    expect(r.wall).toBeCloseTo(3, 1);
+    expect(r.depth).toBeCloseTo(r.wall! - 0.05, 6);
+  });
+
+  it('bounds each region by the wall under it, not the thinnest wall on the chart', () => {
+    const feat = rect(15, 40, 30, 55);
+    expect(walled().resolveCutRegions(feat, 5)).toEqual([{ feat, depth: 5 }]);
+  });
+
+  it('takes the thinner wall where a region spans both', () => {
+    expect(walled().resolveCutRegions(rect(15, 20, 30, 45), 5)[0].wall).toBeCloseTo(3, 1);
+  });
+
+  it('leaves a setting the wall can hold alone', () => {
+    const feat = rect(15, 5, 30, 20);
+    expect(walled().resolveCutRegions(feat, 2)).toEqual([{ feat, depth: 2 }]);
+  });
+
+  it('leaves a setting that rounds to the bound alone, as the warning would print them equal', () => {
+    const feat = rect(15, 5, 30, 20);
+    const bound = walled().resolveCutRegions(feat, 5)[0].depth;
+    expect(walled().resolveCutRegions(feat, bound + 0.004)).toEqual([
+      { feat, depth: bound + 0.004 },
+    ]);
+  });
+
+  it('leaves a region the clip failed on alone, as the flat wall does', () => {
+    const feat = rect(15, 5, 30, 20);
+    expect(walled().resolveCutRegions(feat, 5, { clipped: false })).toEqual([{ feat, depth: 5 }]);
+  });
+
+  it('still bounds a stroke narrower than the wall samples are spaced', () => {
+    // Between the v = 10 and v = 11 sample rows, so not one sample lies inside it.
+    const [r] = walled().resolveCutRegions(rect(15, 10.3, 30, 10.6), 5);
+    expect(r.wall).toBeCloseTo(3, 1);
+  });
+
+  it('re-measures when a deeper setting than any before is asked for', () => {
+    // The first call measures only as far as its own setting; the 3mm wall is past it.
+    const m = walled();
+    const feat = rect(15, 5, 30, 20);
+    expect(m.resolveCutRegions(feat, 1)).toEqual([{ feat, depth: 1 }]);
+    expect(m.resolveCutRegions(feat, 5)[0].wall).toBeCloseTo(3, 1);
+  });
+});
+
+describe('exitDistance', () => {
+  /** A 200mm square, 3mm thick: a fine bottom so the triangle count shrinks the grid cell. */
+  const slab = (): Float32Array => {
+    const out: number[] = [];
+    const N = 280,
+      S = 200,
+      q = S / N;
+    for (let i = 0; i < N; i++)
+      for (let j = 0; j < N; j++) {
+        const [x0, z0, x1, z1] = [i * q, j * q, (i + 1) * q, (j + 1) * q];
+        out.push(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z0, x1, 0, z1, x0, 0, z1);
+      }
+    out.push(0, 3, 0, 0, 3, S, S, 3, S, 0, 3, 0, S, 3, S, S, 3, 0);
+    return Float32Array.from(out);
+  };
+
+  it('reaches every part of a mesh fine enough to cap the grid', () => {
+    // 156,802 triangles: about two per cell would be a 0.72mm cell, 186mm across 256 of them.
+    expect(exitDistance(buildRayMesh(slab()), [198, 3, 198], [0, -1, 0], 5)).toBeCloseTo(3, 6);
+  });
+
+  it('gives up on a ray it cannot place instead of walking forever', () => {
+    const mesh = buildRayMesh(makeSteppedShell(3, 10));
+    // Every axis moving: an axis the ray doesn't move along stops the walk on its own.
+    expect(exitDistance(mesh, [NaN, 10, 20], [0.6, -0.48, 0.64], 5)).toBe(Infinity);
+    expect(exitDistance(mesh, [10, 10, 20], [NaN, NaN, NaN], 5)).toBe(Infinity);
   });
 });
 
