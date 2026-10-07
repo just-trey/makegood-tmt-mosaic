@@ -131,8 +131,9 @@ Detail on any of these: [docs/pipeline.md](docs/pipeline.md) and
   zone reaches them: the two caster mounts, and Seat center, which the cushion
   covers whole.
 - The chair's prime-tower positions are verified on 270mm and 256mm beds only
-  (Snapmaker and Bambu A1). Any other bed inherits the 270mm positions untested:
-  check the tower in your slicer. See [docs/tech-debt.md](docs/tech-debt.md).
+  (Snapmaker and Bambu A1), the footrest's on the 270mm bed only. Any other bed
+  inherits them untested, and the app says so before Export: check the tower in
+  your slicer. See [docs/tech-debt.md](docs/tech-debt.md).
 - "Largest flat patch" auto-face-detection is a heuristic; pick another face in
   the Advanced per-part controls.
 - A part that isn't a watertight mesh can't be cut. It exports uncut, with a

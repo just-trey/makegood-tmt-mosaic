@@ -15,6 +15,12 @@ import {
 } from './threemf';
 import { CHAIR_PLACEMENT } from './chairPlacement';
 
+// "Verified on all three registered plates" (WHEEL_TOP_POS, threemf.ts).
+const WHEEL_VERIFIED_BEDS = ['256x256', '270x270', '350x320'];
+// The two tower passes chairPlacement.ts was baked from. Kept here, not there: that file is
+// generated from stubs not in the repo. The verify-new-bed-size skill adds a bed to this list.
+const CHAIR_VERIFIED_BEDS = ['256x256', '270x270'];
+
 /** The placement fields a part can have baked; the rest of ExportPart comes from the build. */
 export type PartPlacement = Pick<
   ExportPart,
@@ -27,6 +33,7 @@ export type PartPlacement = Pick<
   | 'primeTowerDeltaByPlate'
   | 'objectSettings'
   | 'projectSettings'
+  | 'verifiedBeds'
 >;
 
 /**
@@ -35,15 +42,22 @@ export type PartPlacement = Pick<
  * role: the chair's caster roles resolve to a different mesh, on a different plate, per variant.
  * Roles whose id is their library part id (wheel, footrest) also resolve a user-dropped mesh via
  * the roleId fallback. Either key applies only to a mesh matching its PART_FINGERPRINTS seal.
+ * `verifiedBeds` is required so a newly registered printer fails closed: noted until someone checks it.
  */
-export const PLACEMENT: Record<string, PartPlacement> = {
+export const PLACEMENT: Record<string, PartPlacement & { verifiedBeds: readonly string[] }> = {
   'wheel-half': {
     plateHint: 1,
     rotZdeg: WHEEL_TOP_ROT_DEG,
     fixedPos: WHEEL_TOP_POS,
     primeTowerDelta: WHEEL_PRIME_TOWER_DELTA,
+    verifiedBeds: WHEEL_VERIFIED_BEDS,
   },
-  'wheel-hub-cap': { plateHint: 1, rotZdeg: WHEEL_CAP_ROT_DEG, fixedPos: WHEEL_CAP_POS },
+  'wheel-hub-cap': {
+    plateHint: 1,
+    rotZdeg: WHEEL_CAP_ROT_DEG,
+    fixedPos: WHEEL_CAP_POS,
+    verifiedBeds: WHEEL_VERIFIED_BEDS,
+  },
   // No fixedPos: the reference translation is just the U1's bed center, so it centers via
   // placeHintedGroup with the tower held relative (see FOOTREST_PLATE_R).
   footrest: {
@@ -51,8 +65,15 @@ export const PLACEMENT: Record<string, PartPlacement> = {
     plateR: FOOTREST_PLATE_R,
     primeTowerDelta: FOOTREST_PRIME_TOWER_DELTA,
     objectSettings: FOOTREST_OBJECT_SETTINGS,
+    // Only the U1 reference (stubs/footrest reference tower.3mf) has been opened in a slicer.
+    verifiedBeds: ['270x270'],
   },
-  ...CHAIR_PLACEMENT,
+  ...Object.fromEntries(
+    Object.entries(CHAIR_PLACEMENT).map(([id, p]) => [
+      id,
+      { ...p, verifiedBeds: CHAIR_VERIFIED_BEDS },
+    ]),
+  ),
 };
 
 /**

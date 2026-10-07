@@ -24,10 +24,14 @@ vi.mock('../src/scene/viewport', () => ({
   syncToModelGroup: vi.fn(),
   addSceneOverlay: vi.fn(),
 }));
-vi.mock('../src/geometry/assembly', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/geometry/assembly')>()),
-  buildAssemblyGeometry: vi.fn(),
-}));
+vi.mock('../src/geometry/assembly', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/geometry/assembly')>();
+  return {
+    ...real,
+    buildAssemblyGeometry: vi.fn(),
+    asmPartFaceNormal: vi.fn(real.asmPartFaceNormal),
+  };
+});
 vi.mock('../src/ui/colorList', () => ({ renderColorList: vi.fn() }));
 vi.mock('../src/ui/partPanel', () => ({ renderBaseColorSwatches: vi.fn() }));
 vi.mock('../src/ui/warningsView', () => ({ renderWarnings: vi.fn() }));
@@ -53,7 +57,7 @@ import {
   refreshNetYieldOverlays,
 } from '../src/app/rebuild';
 import { WHOLE_CHAIR_ZONE } from '../src/geometry/zones';
-import { buildAssemblyGeometry } from '../src/geometry/assembly';
+import { asmPartFaceNormal, buildAssemblyGeometry } from '../src/geometry/assembly';
 import { renderColorList } from '../src/ui/colorList';
 import { refreshGizmo } from '../src/scene/designGizmo';
 import { refreshZonePickMeshes } from '../src/scene/zonePick';
@@ -1192,5 +1196,41 @@ describe('a part that failed to load', () => {
     await rebuildCurrent();
 
     expect(WARNINGS.some((w) => /export will be missing/.test(w.message))).toBe(true);
+  });
+});
+
+describe('the placement notes, stated after the rebuild rather than after the download', () => {
+  beforeEach(() => {
+    state.assembly.kindId = 'wheel';
+    state.parsed = parsedSquare();
+    state.assembly.parts = [asmPart()];
+  });
+  const placementNotes = () =>
+    WARNINGS.filter((w) =>
+      w.message.endsWith('placed automatically. Check it in your slicer before printing.'),
+    );
+
+  // asmPart's one triangle claims the wheel half's id but not its mesh: the export's mismatch warning.
+  it('are on the list when the rebuild ends, before any export', async () => {
+    await rebuildCurrent();
+    expect(placementNotes().map((w) => w.level)).toEqual(['warn']);
+  });
+
+  it('are stated once however many rebuilds run', async () => {
+    await rebuildCurrent();
+    await rebuildCurrent();
+    expect(placementNotes()).toHaveLength(1);
+  });
+
+  it('cannot cost the rebuild when stating them throws', async () => {
+    vi.mocked(asmPartFaceNormal).mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(rebuildCurrent()).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+    expect(schedulePersist).toHaveBeenCalled();
+    expect(exportDisabled()).toBe(false);
   });
 });

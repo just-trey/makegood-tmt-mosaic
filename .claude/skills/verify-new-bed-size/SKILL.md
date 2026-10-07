@@ -72,6 +72,10 @@ coordinate, so they survive the re-centering a different bed applies.
 - `git diff src/export/chairPlacement.ts` should touch only the new bed's rows.
   Anything else means an unrelated part moved and needs its own placement
   re-check ([add-part](../add-part/SKILL.md) step 4) first.
+- Add the bed's `"<w>x<d>"` key to `CHAIR_VERIFIED_BEDS` in
+  [placement.ts](../../../src/export/placement.ts). chairPlacement.ts is
+  generated and does not carry it; until the key is there, every chair export
+  on that bed says its layout hasn't been checked.
 - Update README "Known limitations" and
   [tech-debt.md](../../../docs/tech-debt.md) with the newly verified bed, so the
   next reader doesn't re-derive which sizes are checked from git history.

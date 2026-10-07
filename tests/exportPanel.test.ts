@@ -19,7 +19,7 @@ vi.mock('../src/geometry/assembly', async (importOriginal) => ({
 }));
 vi.mock('../src/export/threemf', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/export/threemf')>()),
-  build3MFCombined: vi.fn().mockResolvedValue({ blob: new Blob(), warnings: [] }),
+  build3MFCombined: vi.fn().mockResolvedValue({ blob: new Blob(), warnings: [], notices: [] }),
 }));
 vi.mock('../src/export/placement', () => ({
   resolvePlacement: vi.fn(() => ({ verified: true, placement: {} })),
@@ -210,7 +210,7 @@ describe('exportPrintReady3MF — analytics kind', () => {
     buildWithPalette(1);
     vi.mocked(build3MFCombined).mockImplementationOnce(async () => {
       state.assembly.kindId = 'footrest';
-      return { blob: new Blob(), warnings: [] };
+      return { blob: new Blob(), warnings: [], notices: [] };
     });
 
     await exportPrintReady3MF();
@@ -360,6 +360,7 @@ describe('the lines under the Export button', () => {
     vi.mocked(build3MFCombined).mockResolvedValueOnce({
       blob: new Blob([new Uint8Array(3.5 * 1024 * 1024)]),
       warnings: [],
+      notices: [],
     });
     state.assembly.kindId = 'wheel';
 

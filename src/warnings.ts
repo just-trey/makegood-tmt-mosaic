@@ -7,8 +7,8 @@ export interface Notice {
   level: 'warn' | 'info';
   /**
    * Set on diagnostics a build regenerates every attempt (assembly.ts, regions.ts, scheduler.ts's
-   * failure path). clearBuildWarnings() drops only these, leaving standing facts (a part's load-time
-   * fingerprint mismatch, an export placement notice) that nothing re-derives per rebuild.
+   * failure path, the placement notes after it). clearBuildWarnings() drops only these, leaving
+   * standing facts (a part's load-time fingerprint mismatch) that nothing re-derives per rebuild.
    */
   build?: boolean;
   /**

@@ -47,6 +47,9 @@ export interface ExportPart {
   /** File-global settings this part's verified plate depends on (`prime_tower_width`: the hubcap's
    * clearance holds only at the verified width), merged into project_settings.config. */
   projectSettings?: Record<string, string>;
+  /** Beds (`"<w>x<d>"`) a human checked this baked layout on in a slicer; any other bed gets a note.
+   * Absent on a part with no baked layout, which says so through its own placement notice. */
+  verifiedBeds?: readonly string[];
 }
 export interface ExportOptions {
   rotZdeg?: number;
@@ -328,134 +331,169 @@ function polygonArea(poly: { x: number; y: number }[]): number {
   return Math.abs(a) / 2;
 }
 
+/** A part's rotation, footprint and translation on the plate grid. */
+export interface PlacedPart {
+  part: ExportPart;
+  R: number[][];
+  w: number;
+  d: number;
+  cx: number;
+  cy: number;
+  minZ: number;
+  /** Support distances along FOOTPRINT_AXIS, in the same rotated frame as cx/cy/w/d. */
+  supportMin: number[];
+  supportMax: number[];
+  tx?: number;
+  ty?: number;
+  tz?: number;
+}
+
+/** Everything the 3MF says about where things go, and every note about it, before any XML. */
+export interface PlateLayout {
+  /** Input order; translations include the plate-grid stride. */
+  placed: PlacedPart[];
+  /** Plate order, each the parts on it. */
+  plates: PlacedPart[][];
+  /** Per-plate `wipe_tower_x/y`; undefined when every tower-printing plate is blocked. */
+  towerPositions: Array<{ x: number; y: number } | undefined> | undefined;
+  warnings: string[];
+  /** Information, not warnings: a verified layout on a bed nobody checked it on. */
+  notices: string[];
+}
+
+// From every body vertex, NOT the un-rotated bbox's 8 corners: exact only at zero spin; with a Z
+// angle plus tilt, a non-box shape's (a thin crescent) ghost corners land far outside the mesh.
+function footprintFor(part: ExportPart, R: number[][]): Footprint {
+  const tmn = [Infinity, Infinity, Infinity],
+    tmx = [-Infinity, -Infinity, -Infinity];
+  const smn = FOOTPRINT_AXIS.map(() => Infinity),
+    smx = FOOTPRINT_AXIS.map(() => -Infinity);
+  // Scalars, not a per-vertex array: this runs over every body vertex after every rebuild, for the
+  // notes stated before Export.
+  const [r00, r01, r02] = R[0],
+    [r10, r11, r12] = R[1],
+    [r20, r21, r22] = R[2];
+  const nAxes = FOOTPRINT_AXIS.length;
+  const ax = Float64Array.from(FOOTPRINT_AXIS, (a) => a.x),
+    ay = Float64Array.from(FOOTPRINT_AXIS, (a) => a.y);
+  const sMin = new Float64Array(nAxes).fill(Infinity),
+    sMax = new Float64Array(nAxes).fill(-Infinity);
+  const soup = part.bodySoup;
+  for (let i = 0; i < soup.length; i += 3) {
+    const x = soup[i],
+      y = soup[i + 1],
+      z = soup[i + 2];
+    const p0 = x * r00 + y * r10 + z * r20,
+      p1 = x * r01 + y * r11 + z * r21,
+      p2 = x * r02 + y * r12 + z * r22;
+    if (p0 < tmn[0]) tmn[0] = p0;
+    if (p0 > tmx[0]) tmx[0] = p0;
+    if (p1 < tmn[1]) tmn[1] = p1;
+    if (p1 > tmx[1]) tmx[1] = p1;
+    if (p2 < tmn[2]) tmn[2] = p2;
+    if (p2 > tmx[2]) tmx[2] = p2;
+    for (let a = 0; a < nAxes; a++) {
+      const t = p0 * ax[a] + p1 * ay[a];
+      if (t < sMin[a]) sMin[a] = t;
+      if (t > sMax[a]) sMax[a] = t;
+    }
+  }
+  for (let a = 0; a < nAxes; a++) {
+    smn[a] = sMin[a];
+    smx[a] = sMax[a];
+  }
+  // Every sub-mesh, not just the body: an inlay filling a recess can reach lower than the holed
+  // body. Body-only minZ left inlays floating below Z=0.
+  let minZ = tmn[2];
+  for (const sub of part.subs) {
+    const verts: ArrayLike<number> | undefined = sub.indexed ? sub.indexed.positions : sub.soup;
+    if (!verts) continue;
+    for (let i = 0; i < verts.length; i += 3) {
+      const x = verts[i],
+        y = verts[i + 1],
+        z = verts[i + 2];
+      const pz = x * r02 + y * r12 + z * r22;
+      if (pz < minZ) minZ = pz;
+    }
+  }
+  return {
+    w: tmx[0] - tmn[0],
+    d: tmx[1] - tmn[1],
+    cx: (tmn[0] + tmx[0]) / 2,
+    cy: (tmn[1] + tmx[1]) / 2,
+    minZ,
+    supportMin: smn,
+    supportMax: smx,
+  };
+}
+
+type Footprint = Omit<PlacedPart, 'part' | 'R' | 'tx' | 'ty' | 'tz'>;
+
 /**
- * One print-ready Bambu Studio *project* 3MF. A core-spec 3MF triggers the "not from Bambu Lab"
- * dialog, drops colors, renames parts and piles everything on one plate, so this writes
- * 3D/3dmodel.model (with the BambuStudio:3mfVersion marker), model_settings.config and
- * project_settings.config.
+ * Keyed by body soup: a footprint depends on the mesh and its pose, never the bed, so a printer
+ * switch and the export re-use the one taken after the rebuild (~180ms on the chair,
+ * scripts/bench-placement-notes.mjs). Sound because a build's arrays are never written once it
+ * lands; a new build is new arrays.
+ */
+const footprints = new WeakMap<
+  Float32Array,
+  { R: number[][]; subs: (ArrayLike<number> | undefined)[]; fp: Footprint }
+>();
+
+function footprintOf(part: ExportPart, R: number[][]): Footprint {
+  const subs = part.subs.map((s) => (s.indexed ? s.indexed.positions : s.soup));
+  const hit = footprints.get(part.bodySoup);
+  if (
+    hit &&
+    hit.R.every((row, i) => row.every((v, j) => v === R[i][j])) &&
+    hit.subs.length === subs.length &&
+    hit.subs.every((v, i) => v === subs[i])
+  )
+    return hit.fp;
+  const fp = footprintFor(part, R);
+  footprints.set(part.bodySoup, { R, subs, fp });
+  return fp;
+}
+
+/**
+ * One line for the whole export, never one per part (a chair is 13): parts whose baked layout
+ * names the beds it was checked on, none of them this one.
+ */
+function uncheckedBedNotice(parts: ExportPart[], bedKey: string, w: number, d: number) {
+  const n = parts.filter((p) => p.verifiedBeds && !p.verifiedBeds.includes(bedKey)).length;
+  if (!n) return null;
+  const which =
+    n < parts.length
+      ? `${n} of the ${parts.length} parts`
+      : n === 1
+        ? 'this part'
+        : `all ${n} parts`;
+  return (
+    `The plate layout for ${which} hasn't been checked on a ${w} × ${d}mm bed. ` +
+    `Check the parts and prime tower in your slicer before printing.`
+  );
+}
+
+/**
+ * Where every part and prime tower goes on `opts.printer`, and every placement note, without
+ * writing anything: the panel states these before Export, from the same call the file is written from.
  *
  * Parts lay MOSAIC-FACE-DOWN (or `part.plateR`), spin, then place by precedence: `fixedPos` exactly
  * (externally-verified only: bbox math can't tell overlap from a concave part's open interior);
  * `plateHint` groups, unfixed ones centered; else greedy, largest footprint first.
- * Overhangs are reported in `warnings`. materials: index 0 = body/base, then each shipped color.
  */
-export async function build3MFCombined(
-  materials: ExportMaterial[],
-  parts: ExportPart[],
-  opts: ExportOptions,
-): Promise<{ blob: Blob; warnings: string[] }> {
+export function layoutPlates(parts: ExportPart[], opts: ExportOptions): PlateLayout {
   const rotZ = opts.rotZdeg || 0,
     gap = 8;
   const printer = opts.printer;
   const plateW = printer.plate.w;
   const plateD = printer.plate.d;
-  const enc = new TextEncoder();
-  const files: ZipEntry[] = [
-    {
-      name: '[Content_Types].xml',
-      data: enc.encode(`<?xml version="1.0" encoding="UTF-8"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
-</Types>`),
-    },
-    {
-      name: '_rels/.rels',
-      data: enc.encode(`<?xml version="1.0" encoding="UTF-8"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
-</Relationships>`),
-    },
-  ];
+  type Placed = PlacedPart;
 
-  interface Placed {
-    part: ExportPart;
-    R: number[][];
-    w: number;
-    d: number;
-    cx: number;
-    cy: number;
-    minZ: number;
-    /** Support distances along FOOTPRINT_AXIS, in the same rotated frame as cx/cy/w/d. */
-    supportMin: number[];
-    supportMax: number[];
-    tx?: number;
-    ty?: number;
-    tz?: number;
-    cid?: number;
-    subs?: { id: number; name: string; matIndex: number }[];
-    xf?: string;
-  }
-
-  // From every body vertex, NOT the un-rotated bbox's 8 corners: exact only at zero spin; with a Z
-  // angle plus tilt, a non-box shape's (a thin crescent) ghost corners land far outside the mesh.
-  function footprintFor(
-    part: ExportPart,
-    angleDeg: number,
-  ): {
-    R: number[][];
-    w: number;
-    d: number;
-    cx: number;
-    cy: number;
-    minZ: number;
-    supportMin: number[];
-    supportMax: number[];
-  } {
-    const R = part.plateR ?? rotXthenZ(-90 * part.nsign, angleDeg);
-    const tmn = [Infinity, Infinity, Infinity],
-      tmx = [-Infinity, -Infinity, -Infinity];
-    const smn = FOOTPRINT_AXIS.map(() => Infinity),
-      smx = FOOTPRINT_AXIS.map(() => -Infinity);
-    for (let i = 0; i < part.bodySoup.length; i += 3) {
-      const x = part.bodySoup[i],
-        y = part.bodySoup[i + 1],
-        z = part.bodySoup[i + 2];
-      const p = [
-        x * R[0][0] + y * R[1][0] + z * R[2][0],
-        x * R[0][1] + y * R[1][1] + z * R[2][1],
-        x * R[0][2] + y * R[1][2] + z * R[2][2],
-      ];
-      for (let k = 0; k < 3; k++) {
-        if (p[k] < tmn[k]) tmn[k] = p[k];
-        if (p[k] > tmx[k]) tmx[k] = p[k];
-      }
-      for (let a = 0; a < FOOTPRINT_AXIS.length; a++) {
-        const t = p[0] * FOOTPRINT_AXIS[a].x + p[1] * FOOTPRINT_AXIS[a].y;
-        if (t < smn[a]) smn[a] = t;
-        if (t > smx[a]) smx[a] = t;
-      }
-    }
-    // Every sub-mesh, not just the body: an inlay filling a recess can reach lower than the holed
-    // body. Body-only minZ left inlays floating below Z=0.
-    let minZ = tmn[2];
-    for (const sub of part.subs) {
-      const verts: ArrayLike<number> | undefined = sub.indexed ? sub.indexed.positions : sub.soup;
-      if (!verts) continue;
-      for (let i = 0; i < verts.length; i += 3) {
-        const x = verts[i],
-          y = verts[i + 1],
-          z = verts[i + 2];
-        const pz = x * R[0][2] + y * R[1][2] + z * R[2][2];
-        if (pz < minZ) minZ = pz;
-      }
-    }
-    return {
-      R,
-      w: tmx[0] - tmn[0],
-      d: tmx[1] - tmn[1],
-      cx: (tmn[0] + tmx[0]) / 2,
-      cy: (tmn[1] + tmx[1]) / 2,
-      minZ,
-      supportMin: smn,
-      supportMax: smx,
-    };
-  }
-
-  const placed: Placed[] = parts.map((part) => ({
-    part,
-    ...footprintFor(part, part.rotZdeg ?? rotZ),
-  }));
+  const placed: Placed[] = parts.map((part) => {
+    const R = part.plateR ?? rotXthenZ(-90 * part.nsign, part.rotZdeg ?? rotZ);
+    return { part, R, ...footprintOf(part, R) };
+  });
 
   const warnings: string[] = [];
   // Too big for any position: the off-plate check skips these rather than warn twice.
@@ -707,6 +745,72 @@ export async function build3MFCombined(
     });
   });
 
+  // Tower positions, decided once for the file. Omitted only when EVERY tower-printing plate is
+  // blocked: pinning an overlapped corner asserts a measured collision, so the slicer's default
+  // wins, but the keys are per-plate arrays with no "no opinion" entry. Single-filament plates
+  // don't vote: letting them pinned a 240mm two-material disc's tower onto the disc.
+  const towerPlates = plates.filter((p) => p.towerNeeded);
+  const allBlocked = towerPlates.length > 0 && towerPlates.every((p) => p.towerBlocked);
+  const towerPositions = allBlocked ? undefined : plates.map((p) => p.wipeTower);
+  // Said here because the wording depends on the decision above: a written corner can be moved,
+  // an unwritten one is the slicer's call.
+  blockedTowers.forEach(({ names, plate, at }) =>
+    warnings.push(
+      `The prime tower on the plate holding ${names} has no verified position. ` +
+        `Every corner of the ${plate} plate overlaps a part. ` +
+        (allBlocked
+          ? 'No tower position was saved, so your slicer will place it. Check it before printing.'
+          : // Named: this arm means a position WAS written, and without it they hunt under a part.
+            `It was put at (${at.x.toFixed(0)}, ${at.y.toFixed(0)}), so move the tower in your slicer.`),
+    ),
+  );
+
+  const unchecked = uncheckedBedNotice(parts, bedKey, plateW, plateD);
+  return {
+    placed,
+    plates: plates.map((p) => p.row),
+    towerPositions,
+    warnings,
+    notices: unchecked ? [unchecked] : [],
+  };
+}
+
+/**
+ * One print-ready Bambu Studio *project* 3MF. A core-spec 3MF triggers the "not from Bambu Lab"
+ * dialog, drops colors, renames parts and piles everything on one plate, so this writes
+ * 3D/3dmodel.model (with the BambuStudio:3mfVersion marker), model_settings.config and
+ * project_settings.config, at the positions `layoutPlates` decides.
+ * materials: index 0 = body/base, then each shipped color.
+ */
+export async function build3MFCombined(
+  materials: ExportMaterial[],
+  parts: ExportPart[],
+  opts: ExportOptions,
+): Promise<{ blob: Blob; warnings: string[]; notices: string[] }> {
+  const { placed, plates, towerPositions, warnings, notices } = layoutPlates(parts, opts);
+  const enc = new TextEncoder();
+  const files: ZipEntry[] = [
+    {
+      name: '[Content_Types].xml',
+      data: enc.encode(`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>`),
+    },
+    {
+      name: '_rels/.rels',
+      data: enc.encode(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>`),
+    },
+  ];
+
+  const written = new Map<
+    PlacedPart,
+    { cid: number; subs: { id: number; name: string; matIndex: number }[]; xf: string }
+  >();
   let nextId = 1;
   let objXml = '';
   const items: string[] = [];
@@ -746,9 +850,7 @@ ${subs.map((s) => `    <component objectid="${s.id}"/>`).join('\n')}
   </object>
 `;
     const R = pl.R;
-    pl.cid = cid;
-    pl.subs = subs;
-    pl.xf = [
+    const xf = [
       R[0][0],
       R[0][1],
       R[0][2],
@@ -770,7 +872,8 @@ ${subs.map((s) => `    <component objectid="${s.id}"/>`).join('\n')}
         return +v.toFixed(6);
       })
       .join(' ');
-    items.push(`  <item objectid="${cid}" transform="${pl.xf}" printable="1"/>`);
+    written.set(pl, { cid, subs, xf });
+    items.push(`  <item objectid="${cid}" transform="${xf}" printable="1"/>`);
   }
 
   const model = `<?xml version="1.0" encoding="UTF-8"?>
@@ -788,13 +891,14 @@ ${items.join('\n')}
   // model_settings.config: where Bambu reads part names, per-part extruder and plate membership.
   const cfg = ['<?xml version="1.0" encoding="UTF-8"?>', '<config>'];
   for (const pl of placed) {
-    cfg.push(`  <object id="${pl.cid}">`);
+    const w = written.get(pl)!;
+    cfg.push(`  <object id="${w.cid}">`);
     cfg.push(`    <metadata key="name" value="${xmlEscape(pl.part.name)}"/>`);
     cfg.push(`    <metadata key="extruder" value="1"/>`);
     // Object-level overrides on top of the global project settings (footrest support, handle brim).
     for (const [key, value] of Object.entries(pl.part.objectSettings ?? {}))
       cfg.push(`    <metadata key="${xmlEscape(key)}" value="${xmlEscape(value)}"/>`);
-    for (const s of pl.subs!) {
+    for (const s of w.subs) {
       cfg.push(`    <part id="${s.id}" subtype="normal_part">`);
       cfg.push(`      <metadata key="name" value="${xmlEscape(s.name)}"/>`);
       cfg.push(`      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>`);
@@ -804,16 +908,16 @@ ${items.join('\n')}
     cfg.push(`  </object>`);
   }
   let identifyId = 100;
-  plates.forEach((plate, pi) => {
+  plates.forEach((row, pi) => {
     // Shown in Bambu/Orca's plate list, so the distinct part names ("Top + Cap"), not a blank.
-    const plateName = [...new Set(plate.row.map((pl) => pl.part.name))].join(' + ');
+    const plateName = [...new Set(row.map((pl) => pl.part.name))].join(' + ');
     cfg.push('  <plate>');
     cfg.push(`    <metadata key="plater_id" value="${pi + 1}"/>`);
     cfg.push(`    <metadata key="plater_name" value="${xmlEscape(plateName)}"/>`);
     cfg.push(`    <metadata key="locked" value="false"/>`);
-    plate.row.forEach((pl) => {
+    row.forEach((pl) => {
       cfg.push('    <model_instance>');
-      cfg.push(`      <metadata key="object_id" value="${pl.cid}"/>`);
+      cfg.push(`      <metadata key="object_id" value="${written.get(pl)!.cid}"/>`);
       cfg.push(`      <metadata key="instance_id" value="0"/>`);
       cfg.push(`      <metadata key="identify_id" value="${identifyId++}"/>`);
       cfg.push('    </model_instance>');
@@ -821,33 +925,15 @@ ${items.join('\n')}
     cfg.push('  </plate>');
   });
   cfg.push('  <assemble>');
-  for (const pl of placed)
+  for (const pl of placed) {
+    const { cid, xf } = written.get(pl)!;
     cfg.push(
-      `   <assemble_item object_id="${pl.cid}" instance_id="0" transform="${pl.xf}" offset="0 0 0"/>`,
+      `   <assemble_item object_id="${cid}" instance_id="0" transform="${xf}" offset="0 0 0"/>`,
     );
+  }
   cfg.push('  </assemble>');
   cfg.push('</config>');
   files.push({ name: 'Metadata/model_settings.config', data: enc.encode(cfg.join('\n')) });
-
-  // Tower positions, decided once for the file. Omitted only when EVERY tower-printing plate is
-  // blocked: pinning an overlapped corner asserts a measured collision, so the slicer's default
-  // wins, but the keys are per-plate arrays with no "no opinion" entry. Single-filament plates
-  // don't vote: letting them pinned a 240mm two-material disc's tower onto the disc.
-  const towerPlates = plates.filter((p) => p.towerNeeded);
-  const allBlocked = towerPlates.length > 0 && towerPlates.every((p) => p.towerBlocked);
-  const towerPositions = allBlocked ? undefined : plates.map((p) => p.wipeTower);
-  // Said here because the wording depends on the decision above: a written corner can be moved,
-  // an unwritten one is the slicer's call.
-  blockedTowers.forEach(({ names, plate, at }) =>
-    warnings.push(
-      `The prime tower on the plate holding ${names} has no verified position. ` +
-        `Every corner of the ${plate} plate overlaps a part. ` +
-        (allBlocked
-          ? 'No tower position was saved, so your slicer will place it. Check it before printing.'
-          : // Named: this arm means a position WAS written, and without it they hunt under a part.
-            `It was put at (${at.x.toFixed(0)}, ${at.y.toFixed(0)}), so move the tower in your slicer.`),
-    ),
-  );
 
   files.push({
     name: 'Metadata/project_settings.config',
@@ -856,12 +942,12 @@ ${items.join('\n')}
       // not this file's plate-centre fallback, and nowhere near a part just centered on the plate.
       bambuProjectSettings(
         materials,
-        printer,
+        opts.printer,
         towerPositions,
         // File-global, so baked overrides merge; nothing ships two parts disagreeing on a key.
         parts.reduce<Record<string, string>>((acc, p) => Object.assign(acc, p.projectSettings), {}),
       ),
     ),
   });
-  return { blob: zipStore(files), warnings };
+  return { blob: zipStore(files), warnings, notices };
 }

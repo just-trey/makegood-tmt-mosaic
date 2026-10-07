@@ -15,7 +15,8 @@ import { meshFingerprint } from '../src/geometry/zoneCharts';
 import { PLACEMENT, placementNotice, resolvePlacement } from '../src/export/placement';
 import { PART_FINGERPRINTS } from '../src/export/partFingerprints';
 import { build3MFCombined, FOOTREST_PLATE_R, type ExportPart } from '../src/export/threemf';
-import { getPrinter } from '../src/export/printers';
+import { getPrinter, PRINTERS } from '../src/export/printers';
+import { PLACEMENT_WARNING_SUFFIXES } from '../src/ui/exportPanel';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 import type { AssemblyPart } from '../src/types';
 
@@ -119,6 +120,53 @@ describe('renamed/drifted part ids', () => {
     const reachable = [...allLibraryPartIds()].sort();
     const listed = manifest.map((e) => e.id).sort();
     expect(listed).toEqual(reachable);
+  });
+});
+
+describe('the beds each baked layout was checked on', () => {
+  const beds = new Set(PRINTERS.map((p) => `${p.plate.w}x${p.plate.d}`));
+
+  // Required, so a printer added later is noted on every kind until someone checks it.
+  it('every PLACEMENT entry names at least one, each a registered printer’s bed', () => {
+    for (const [id, p] of Object.entries(PLACEMENT)) {
+      expect(p.verifiedBeds?.length, id).toBeGreaterThan(0);
+      for (const bed of p.verifiedBeds) expect(beds.has(bed), `${id}: ${bed}`).toBe(true);
+    }
+  });
+
+  it('notes an unchecked bed with a suffix the panel clears on', async () => {
+    const soup = await soupOf('footrest');
+    const footrest: ExportPart = {
+      name: 'Footrest',
+      nsign: 1,
+      bodySoup: soup,
+      subs: [{ name: 'Body', matIndex: 0, soup }],
+      ...PLACEMENT.footrest,
+    };
+    const { notices } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], [footrest], {
+      printer: getPrinter('bambu-h2d'),
+    });
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatch(/Check the parts and prime tower in your slicer before printing\.$/);
+    expect(PLACEMENT_WARNING_SUFFIXES.some((s) => notices[0].endsWith(s))).toBe(true);
+  });
+
+  // A part with no baked layout has its own notice (placementNotice); it is not counted here.
+  it('counts only the parts with a baked layout, when not every part has one', async () => {
+    const soup = await soupOf('footrest');
+    const sub = [{ name: 'Body', matIndex: 0, soup }];
+    const { notices } = await build3MFCombined(
+      [{ name: 'Body', color: '#cccccc' }],
+      [
+        { name: 'Footrest', nsign: 1, bodySoup: soup, subs: sub, ...PLACEMENT.footrest },
+        { name: 'Unbaked', nsign: 1, bodySoup: soup, subs: sub, plateHint: 2 },
+      ],
+      { printer: getPrinter('bambu-x1c') },
+    );
+    expect(notices).toEqual([
+      "The plate layout for 1 of the 2 parts hasn't been checked on a 256 × 256mm bed. " +
+        'Check the parts and prime tower in your slicer before printing.',
+    ]);
   });
 });
 

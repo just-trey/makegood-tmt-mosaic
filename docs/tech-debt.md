@@ -66,6 +66,8 @@ non-square bed of the three.
   takes one `--towers` file per bed and works out which plates disagree.
 - The caster plates stay on `suggestTowerPos` in [src/export/threemf.ts](../src/export/threemf.ts),
   which is correct: they print one filament and get no tower.
+- An export on any other bed now says so before Export: one info line from `CHAIR_VERIFIED_BEDS` in
+  [src/export/placement.ts](../src/export/placement.ts). A new bed's pass adds its key there.
 
 ## A depth on a flat face the Y axis can't measure has no upper bound
 
@@ -802,17 +804,6 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 - The zone select offers both "All zones" and "Whole chair" with nothing saying how they differ.
 - Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 1, three lenses.
 - **Closing it**: explain or drop one of the two "whole" entries.
-
-## Placement and prime-tower notices appear only after the file is saved
-
-- Hubcap 240mm on the X1C, 260mm on the U1: "No tower position was saved" shows only after the
-  download. Half of the 2026-08-24 T0-8; the other half (pills outliving a printer switch) is fixed.
-- A chair export on the H2D, a bed with no baked pass, shows no "check it in your slicer" note; the hubcap
-  on the same printer does. The positions themselves are the open section "The chair's prime-tower
-  positions have only been verified on one bed size".
-- Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) items 3, 11.
-- **Closing it**: compute the placement notes on the build, not the export, and show the unverified-bed
-  note for every kind.
 
 ## Chair notices pile up, and warnings name colors by hex
 
