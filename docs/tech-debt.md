@@ -932,3 +932,11 @@ count. None of them reaches the print as drawn.
 - **Clip proof is conservative.** A clip is taken to crop a shape unless every point of the shape lies
   inside every edge of one clip outline (`insideEveryEdge`, [src/svg/clip.ts](../src/svg/clip.ts)). Under a clip
   that isn't convex, a shape spanning both arms of an L warns although nothing is cropped.
+
+## An invalid own fill prints black instead of inheriting the group's fill
+
+- `<g fill="#ff0000"><rect fill="bogus"/></g>` imports the rect as `#000000`. A browser ignores an invalid
+  value and inherits the group's red, so the print differs from the editor only when a group sets a fill.
+- Found while fixing the inherited `fill="none"` cascade (#363). No shipped or fixture SVG sets a fill on
+  a group (`RUN_SVG_SKIP_SWEEP=1 npx vitest run scripts/measure-svg-skipped-content.test.ts`).
+- **Closing it**: treat an unparseable own fill as `inherit` in `paint()` (src/svg/parse.ts).
