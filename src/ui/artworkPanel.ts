@@ -5,6 +5,7 @@ import {
   pruneSettingsToPalette,
   rasterMmPerPixel,
 } from '../state/artwork';
+import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { beginWork, endWork } from '../app/idle';
 import { requestFrame } from '../scene/viewport';
@@ -14,14 +15,14 @@ import { parseRasterImage } from '../raster/parse';
 import { DETAIL_DEFAULT } from '../raster/stats';
 import { clearWarnings, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
-import { renderArtworkList } from './artworkListPanel';
+import { renderArtworkList, selectArtwork } from './artworkListPanel';
 import { refreshFitInputsFromState, updateOffsetSliderRanges } from './fitPanel';
 import { $, input } from './dom';
 import { track } from '../analytics/track';
 import { alertDialog } from './dialogs';
 
 // 3 colors on purpose: with the body that is 4 AMS slots, one unit, so the demo never opens on a capacity pill. The big centred circle doubles as the design anchor.
-const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+export const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
   <circle cx="100" cy="100" r="95" fill="#1e5fa8"/>
   <path d="M100 20 L118 72 L174 72 L128 104 L146 158 L100 124 L54 158 L72 104 L26 72 L82 72 Z" fill="#f5d020"/>
   <circle cx="100" cy="100" r="16" fill="#c1272d"/>
@@ -49,7 +50,7 @@ export function applyParsedSVG(
   // no-op. clearWarnings() lives here, not in parseSVGDocument — a parser must not own UI state, and
   // the restore loop parses several sources without each wiping the last (state/persist.ts).
   clearWarnings();
-  const parsed = parseSVGDocument(svgText);
+  const parsed = parseSVGDocument(svgText, kind === 'sample' ? 'sample' : undefined);
   loadArtworkSource(parsed, fname, kind, mode, svgText); // adds a new source+instance alongside any already loaded
   afterArtworkLoaded(fname);
 }
@@ -145,7 +146,14 @@ export function initArtworkPanel(): void {
   });
 
   $('#btn-sample').addEventListener('click', () => {
-    applyParsedSVG(SAMPLE_SVG, 'sample-badge.svg');
+    const loaded = state.sources.find((s) => s.kind === 'sample');
+    const shown = loaded && state.artworks.find((a) => a.sourceId === loaded.id);
+    if (shown) {
+      // Selecting, not disabling: removal and restore would each have to re-enable the button.
+      selectArtwork(shown.id);
+      return;
+    }
+    applyParsedSVG(SAMPLE_SVG, 'sample-badge.svg', 'sample');
     track('artwork_load', { source: 'sample' });
   });
 }

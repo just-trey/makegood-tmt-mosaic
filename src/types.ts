@@ -45,9 +45,10 @@ export interface ParsedSVG {
   canvas?: { w: number; h: number } | null;
   /**
    * Which producer built this; absent means the SVG parser. Only designScale.ts's sizing advice reads
-   * it: "set your document size in millimetres" is right for an SVG and impossible for a PNG.
+   * it: "set your document size in millimetres" is right for an SVG and impossible for a PNG, and
+   * the built-in sample is ours, so telling the user to size it is noise.
    */
-  origin?: 'svg' | 'raster';
+  origin?: 'svg' | 'raster' | 'sample';
 }
 
 /** One recess region after user merges are applied (key is a hex or "merge:a,b"). */
@@ -128,7 +129,7 @@ export interface RasterState {
  */
 export interface DesignSource {
   id: string;
-  kind: 'upload' | 'raster';
+  kind: 'upload' | 'raster' | 'sample';
   name: string;
   parsed: ParsedSVG;
   /**

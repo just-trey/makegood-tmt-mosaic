@@ -186,11 +186,13 @@ export function designMmPerUnit(
   if (designFace && sheet && sheet.w > 0 && sheet.h > 0) {
     // Two strings, not one format-neutral one: setting the document size in mm is the real fix for
     // an SVG and impossible for an image, so a shared message loses the actionable half of each.
-    notice(
-      parsed.origin === 'raster'
-        ? 'This image has no real-world size, so it was auto-fit to the part face. Use Scale to fine-tune.'
-        : 'This SVG has no size in millimeters, so it was auto-fit to the part face. Set the document size in millimeters for an exact fit, or fine-tune with Scale.',
-    );
+    // The sample fits the same way, but it is ours: nothing for the user to fix in it.
+    if (parsed.origin !== 'sample')
+      notice(
+        parsed.origin === 'raster'
+          ? 'This image has no real-world size, so it was auto-fit to the part face. Use Scale to fine-tune.'
+          : 'This SVG has no size in millimeters, so it was auto-fit to the part face. Set the document size in millimeters for an exact fit, or fine-tune with Scale.',
+      );
     return Math.min(designFace.w / sheet.w, designFace.h / sheet.h) * scaleMult * fit;
   }
   if (designFace)

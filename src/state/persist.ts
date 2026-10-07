@@ -552,9 +552,9 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       // Coerced: 'pattern' was a kind in sessions saved before the built-in library was removed.
       sources.push({
         ...s,
-        kind: 'upload',
+        kind: s.kind === 'sample' ? 'sample' : 'upload',
         raster: undefined,
-        parsed: parseSVGDocument(s.svgText),
+        parsed: parseSVGDocument(s.svgText, s.kind === 'sample' ? 'sample' : undefined),
       });
       continue;
     }

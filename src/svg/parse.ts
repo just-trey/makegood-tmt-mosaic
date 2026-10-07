@@ -255,7 +255,7 @@ function localLoops(el: Element, tag: string, onBrokenPath: () => void): Loop[] 
 }
 
 /** Parse SVG markup into flat lists of {fill, loops} in SVG user-space units, with all transforms (including viewBox translation) baked in. */
-export function parseSVGDocument(svgText: string): ParsedSVG {
+export function parseSVGDocument(svgText: string, origin?: ParsedSVG['origin']): ParsedSVG {
   const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
   const perr = doc.querySelector('parsererror');
   if (perr) throw new Error('SVG could not be parsed. Check the file is valid XML.');
@@ -639,5 +639,6 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     userUnitMM,
     viewBox: vb ? { w: vbW, h: vbH } : null,
     canvas,
+    ...(origin ? { origin } : {}),
   };
 }
