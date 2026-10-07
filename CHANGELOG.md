@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The file name under the drop area now stays put.** It was blank after you
+  restored a session, and after removing one of two designs. It now shows the
+  design you are editing, and goes blank only when none are left.
 - **A chair design on only some zones now shows it before Export.** The "zones
   still blank" message is a warning instead of a quiet notice, and the line
   above the Export button says "Artwork on 1 of 8 zones". The second warning
