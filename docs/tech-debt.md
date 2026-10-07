@@ -809,7 +809,7 @@ Third consecutive review cycle (bloat, 2026-08-24 beta, [2026-10-06 beta](review
   standing warning (wheel: "Cap" only; chair: 12 of 13 parts). Cycle item 6.
 - **Closing it**: one status line under the button after a download (file name, plates, filaments, size);
   a one-line reason when disabled, one rule for every "nothing to print" case; a standing warning for a
-  part that did not load; clear the raster "No opaque pixels" warning on the next good image load.
+  part that did not load.
 
 ## New chair artwork lands on one zone, so a one-sided chair is the default path
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A "No opaque pixels" warning no longer outlives the next good image.** Loading
+  a fully transparent PNG, then a normal one, left the first image's warning
+  standing over the good load. An image load now clears it, as an SVG load
+  already did.
+
 ## [0.8.0] - 2026-10-06
 
 ### Added

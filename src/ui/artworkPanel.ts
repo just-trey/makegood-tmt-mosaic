@@ -77,6 +77,8 @@ async function applyRasterFile(file: File): Promise<void> {
     };
     // Decode and trace before touching state, like applyParsedSVG. name is passed beside opts, not in it: opts is spread into the RasterState on the source, which has no name field (state/persist.ts).
     const result = parseRasterImage(image, { ...opts, name: file.name });
+    // After the parse so a failed one leaves state alone; applyParsedSVG clears for SVGs and the raster path must too, or an earlier failure's warning outlives every good load.
+    clearWarnings();
     // No svgText: an image's source of truth is its pixels, round-tripped separately as the working copy re-encoded to PNG (raster/store.ts).
     const instance = loadArtworkSource(result.parsed, file.name, 'raster', 'sticker', '', {
       image,
