@@ -360,7 +360,7 @@ describe('the lines under the Export button', () => {
     await exportPrintReady3MF();
 
     expect(status().hidden).toBe(false);
-    expect(status().textContent).toBe('Saved mosaic-wheel.3mf · 3 filaments · 3.5 MB');
+    expect(status().textContent).toBe('Saved mosaic-wheel.3mf · 3\u00a0filaments · 3.5\u00a0MB');
 
     clearExportStatus();
     expect(status().hidden).toBe(true);

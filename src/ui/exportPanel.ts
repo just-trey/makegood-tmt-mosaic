@@ -83,16 +83,17 @@ export function clearExportStatus(): void {
 
 function formatSize(bytes: number): string {
   return bytes < 1024 * 1024
-    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    ? `${Math.max(1, Math.round(bytes / 1024))}\u00a0KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)}\u00a0MB`;
 }
 
 function showExportStatus(fname: string, plates: number | null, filaments: number, bytes: number) {
   const el = document.querySelector<HTMLElement>('#export-status');
   if (!el) return;
   const bits = [`Saved ${fname}`];
-  if (plates) bits.push(`${plates} plate${plates === 1 ? '' : 's'}`);
-  bits.push(`${filaments} filament${filaments === 1 ? '' : 's'}`, formatSize(bytes));
+  // non-breaking spaces so a wrapped line never strands a unit from its number
+  if (plates) bits.push(`${plates}\u00a0plate${plates === 1 ? '' : 's'}`);
+  bits.push(`${filaments}\u00a0filament${filaments === 1 ? '' : 's'}`, formatSize(bytes));
   el.textContent = bits.join(' · ');
   el.hidden = false;
 }
