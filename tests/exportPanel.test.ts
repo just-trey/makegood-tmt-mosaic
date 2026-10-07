@@ -9,6 +9,10 @@ vi.mock('../src/app/rebuild', () => ({
   holdExport: vi.fn(),
   exportBlockedReason: vi.fn(() => null),
 }));
+vi.mock('../src/state/artwork', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/state/artwork')>()),
+  zoneCoverage: vi.fn(() => ({ total: 0, covered: 0 })),
+}));
 vi.mock('../src/geometry/assembly', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/geometry/assembly')>()),
   asmPartFaceNormal: vi.fn(() => null),
@@ -44,7 +48,9 @@ import {
   exportPrintReady3MF,
   initExportPanel,
   renderExportHint,
+  renderExportSummary,
 } from '../src/ui/exportPanel';
+import { zoneCoverage } from '../src/state/artwork';
 import { beginWork, endWork } from '../src/app/idle';
 import { refreshSlotBudgetNotice, SLOT_PILL_SUFFIX } from '../src/ui/slotBudget';
 import { getPrinter } from '../src/export/printers';
@@ -375,5 +381,45 @@ describe('the lines under the Export button', () => {
     vi.mocked(build3MFCombined).mockRejectedValueOnce(new Error('boom'));
     await exportPrintReady3MF();
     expect(status().hidden).toBe(true);
+  });
+});
+
+describe('zone coverage next to the Export button', () => {
+  const summary = () => document.querySelector<HTMLElement>('#export-summary')!;
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="warnings"></div><div id="export-summary" hidden></div>';
+    vi.mocked(isExportReady).mockReturnValue(true);
+    vi.mocked(getLastAssemblyBuild).mockReturnValue({
+      partOutputs: [partOutput()],
+      palette: [],
+    } as unknown as ReturnType<typeof getLastAssemblyBuild>);
+  });
+
+  it('states how many zones have artwork when some are blank', () => {
+    vi.mocked(zoneCoverage).mockReturnValue({ total: 8, covered: 1 });
+    renderExportSummary();
+    expect(summary().textContent).toContain('Artwork on 1 of 8 zones');
+  });
+
+  it('adds nothing when every zone is covered or the part has one zone', () => {
+    vi.mocked(zoneCoverage).mockReturnValue({ total: 8, covered: 8 });
+    renderExportSummary();
+    const full = summary().textContent;
+    vi.mocked(zoneCoverage).mockReturnValue({ total: 0, covered: 0 });
+    renderExportSummary();
+    expect(full).not.toContain('zones');
+    expect(summary().textContent).toBe(full);
+  });
+
+  it('does not raise a second coverage warning at export time', async () => {
+    vi.mocked(zoneCoverage).mockReturnValue({ total: 8, covered: 1 });
+    vi.mocked(getLastAssemblyBuild).mockReturnValue({
+      partOutputs: [partOutput()],
+      palette: [],
+      warnings: [],
+    } as unknown as ReturnType<typeof getLastAssemblyBuild>);
+    await exportPrintReady3MF();
+    expect(WARNINGS.map((w) => w.message).join('\n')).not.toContain('Exporting with artwork');
   });
 });

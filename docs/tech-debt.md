@@ -799,13 +799,9 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 
 ## New chair artwork lands on one zone, so a one-sided chair is the default path
 
-- A new design binds to "Left side"; "7 of 8 zones still blank" is ℹ, and Export is enabled. The
-  "artwork on 1 of 8 zones" warning arrives after the download.
-- The sample does the same: a thumbnail-sized badge on the flank facing away from the default camera.
 - The zone select offers both "All zones" and "Whole chair" with nothing saying how they differ.
 - Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 1, three lenses.
-- **Closing it**: default new chair artwork to All zones, or say the zone count in `#export-summary`
-  before the click; explain or drop one of the two "whole" entries. Make "Load sample artwork" a no-op
+- **Closing it**: explain or drop one of the two "whole" entries. Make "Load sample artwork" a no-op
   once loaded and give the sample a size in mm so it raises no note (cycle item 13).
 
 ## Placement and prime-tower notices appear only after the file is saved

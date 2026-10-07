@@ -1203,6 +1203,10 @@ a {
   font-size: var(--text-body);
   color: var(--text);
 }
+.export-summary-coverage {
+  font-size: var(--text-label);
+  color: var(--danger);
+}
 .export-summary-swatches {
   display: flex;
   flex-wrap: wrap;
