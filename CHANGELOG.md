@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   a fully transparent PNG, then a normal one, left the first image's warning
   standing over the good load. An image load now clears it, as an SVG load
   already did.
+- **A part whose file fails to load now leaves a standing warning.** It names the
+  part and says the export will be missing it. Before, dismissing the alert left
+  Export shipping the rest (the wheel's Cap alone, 12 of the chair's 13 parts)
+  with nothing on screen. It clears when a later load succeeds or the kind
+  changes.
 
 ## [0.8.0] - 2026-10-06
 

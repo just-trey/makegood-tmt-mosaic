@@ -1,7 +1,12 @@
 // A module of its own so that it calls asmLoadFullAssembly through the import, which the restore
 // tests mock; a call inside parts.ts would bypass the mock.
 import { state } from '../state/store';
-import { asmLoadFullAssembly, asmLoadWasAbandoned, type AssemblyLoadOutcome } from './parts';
+import {
+  asmLoadFullAssembly,
+  asmLoadWasAbandoned,
+  warnMissingParts,
+  type AssemblyLoadOutcome,
+} from './parts';
 
 /**
  * Switch to a kind and load it, putting the previous kind, variant and parts back if the load
@@ -33,6 +38,7 @@ export async function asmSwitchKindAndLoad(
   state.assembly.kindId = prevKind;
   state.assembly.variantId = prevVariant;
   state.assembly.parts = prevParts;
+  warnMissingParts(prevParts);
   // The list put back was mid-load when this switch cleared it, and that load has since given up
   // on it: finish it, or the previous kind comes back with only the roles that had arrived.
   if (asmLoadWasAbandoned(prevParts)) {

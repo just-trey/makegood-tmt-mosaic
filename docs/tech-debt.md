@@ -797,14 +797,6 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 - **Fill tiling has no cancel check.** The page no longer waits on it; the worker is terminated after
   `CANCEL_GRACE_MS` (1s) instead.
 
-## A finished export says nothing, and a disabled Export gives no reason
-
-Third consecutive review cycle (bloat, 2026-08-24 beta, [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 2).
-
-- A part whose file fails to load raises an alert naming it; once dismissed, Export ships the rest with no
-  standing warning (wheel: "Cap" only; chair: 12 of 13 parts). Cycle item 6.
-- **Closing it**: a standing warning for a part that did not load.
-
 ## New chair artwork lands on one zone, so a one-sided chair is the default path
 
 - A new design binds to "Left side"; "7 of 8 zones still blank" is ℹ, and Export is enabled. The
