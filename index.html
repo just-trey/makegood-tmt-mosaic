@@ -312,6 +312,11 @@
               Some parts have no fixed plate, such as a hubcap cut to artwork shape. They show parts
               and filaments without a plate count.
             </p>
+            <p>
+              When Export is off, a line under the button says why. After a download, another line
+              says what was saved: the file name, plates, filaments and size. It goes away when you
+              change the design.
+            </p>
           </section>
 
           <section class="help-sec" id="h-about">
@@ -609,6 +614,7 @@
           </div>
           <div class="export-summary" id="export-summary" hidden></div>
           <button class="btn primary full" id="btn-export" disabled>Export print-ready 3MF</button>
+          <div class="hint" id="export-status" role="status" hidden></div>
           <div class="hint" id="export-hint">
             Exports a Bambu Studio project 3MF. Parts are spread across build plates, with colors
             pre-assigned to filament slots.

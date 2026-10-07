@@ -45,6 +45,7 @@ vi.mock('../src/assembly/parts', async (importOriginal) => ({
 vi.mock('../src/ui/dom', () => ({ $: (sel: string) => document.querySelector(sel) }));
 
 import {
+  exportBlockedReason,
   getLastAssemblyBuild,
   holdExport,
   isExportReady,
@@ -1101,5 +1102,67 @@ describe('a mirrored instance reaches the build as two placements', () => {
     await rebuildCurrent();
 
     expect(built()).toHaveLength(1);
+  });
+});
+
+describe('why Export is off', () => {
+  beforeEach(() => {
+    state.assembly.kindId = 'wheel';
+    state.assembly.parts = [asmPart()];
+  });
+
+  it('says nothing while Export is on', async () => {
+    state.parsed = parsedSquare();
+    await rebuildCurrent();
+    expect(exportBlockedReason()).toBeNull();
+  });
+
+  it('names each case, and no two read the same', async () => {
+    const reasons: (string | null)[] = [];
+
+    await rebuildCurrent(); // no artwork
+    reasons.push(exportBlockedReason());
+
+    state.parsed = parsedSquare();
+    vi.mocked(buildAssemblyGeometry).mockResolvedValue(
+      assemblyBuild({ partOutputs: [{ part: asmPart(), bodySoup: tri(), inlaySoups: {} }] }),
+    );
+    await rebuildCurrent(); // every color landed off the part
+    expect(exportDisabled()).toBe(true);
+    reasons.push(exportBlockedReason());
+
+    vi.mocked(buildAssemblyGeometry).mockRejectedValue(new RebuildCancelled());
+    await rebuildCurrent();
+    reasons.push(exportBlockedReason());
+
+    vi.mocked(buildAssemblyGeometry).mockRejectedValue(new BuildWorkerCrashed());
+    await rebuildCurrent();
+    reasons.push(exportBlockedReason());
+
+    expect(reasons.every((r) => r && r.length < 80)).toBe(true);
+    expect(new Set(reasons).size).toBe(4);
+  });
+
+  it('drops the "saved" line when the design changes, and shows the reason on the page', async () => {
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<div id="export-status">Saved x.3mf</div><div id="export-hint">usual</div>',
+    );
+    await rebuildCurrent(); // no artwork
+    expect(document.querySelector('#export-status')!.textContent).toBe('');
+    expect(document.querySelector('#export-hint')!.textContent).toBe(exportBlockedReason());
+  });
+
+  it('keeps a body-only export when the design became the body color', async () => {
+    state.parsed = parsedSquare();
+    vi.mocked(buildAssemblyGeometry).mockResolvedValue(
+      assemblyBuild({
+        partOutputs: [{ part: asmPart(), bodySoup: tri(), inlaySoups: {} }],
+        baseAssigned: { hex: '#ff0000', areaPct: 100 },
+      } as Partial<AssemblyBuild>),
+    );
+    await rebuildCurrent();
+    expect(exportDisabled()).toBe(false);
+    expect(exportBlockedReason()).toBeNull();
   });
 });

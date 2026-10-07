@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A finished export now says what it saved.** A line under the Export button
+  names the file, plates, filaments and size, and clears when the design changes.
+
 ### Fixed
 
+- **A disabled Export now says why.** One line under the button covers no design,
+  a design that lands entirely off the part, a cancelled rebuild and a failed one.
+  A design with no color on the part now turns Export off instead of saving a
+  file with nothing of the design in it. A design whose colors all became the
+  body color still exports.
 - **A "No opaque pixels" warning no longer outlives the next good image.** Loading
   a fully transparent PNG, then a normal one, left the first image's warning
   standing over the good load. An image load now clears it, as an SVG load

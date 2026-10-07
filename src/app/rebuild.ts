@@ -52,7 +52,7 @@ import { renderArtworkList } from '../ui/artworkListPanel';
 import { rebuildSettled, scheduleRebuild } from './scheduler';
 import { schedulePersist } from '../state/persist';
 import { $ } from '../ui/dom';
-import { renderExportSummary } from '../ui/exportPanel';
+import { clearExportStatus, renderExportHint, renderExportSummary } from '../ui/exportPanel';
 import { RebuildCancelled } from '../cancel';
 import { BuildWorkerCrashed, BuildWorkerFault, runAssemblyBuild } from './buildClient';
 
@@ -64,11 +64,18 @@ export function getLastAssemblyBuild(): AssemblyBuild | null {
 
 let exportReady = false;
 let exportHeld = false;
+let exportReason: string | null = null;
 
-/** The rebuild's verdict on #btn-export. An export in progress holds the button off over it. */
-function setExportReady(on: boolean): void {
+/** The rebuild's verdict on #btn-export, with the reason when it is off. An export in progress holds the button off over it. */
+function setExportReady(on: boolean, reason: string | null = null): void {
   exportReady = on;
+  exportReason = on ? null : reason;
   $<HTMLButtonElement>('#btn-export').disabled = !on || exportHeld;
+}
+
+/** One line for why Export is off, or null while it is on. A hold during an export is not a reason. */
+export function exportBlockedReason(): string | null {
+  return exportReady ? null : exportReason;
 }
 
 /** Held from the click until the export ends, including its wait for a rebuild to finish. */
@@ -127,12 +134,14 @@ export function estimateRebuildSlow(): boolean {
 
 /** Entry point the scheduler debounces into. */
 export async function rebuildCurrent(): Promise<void> {
+  clearExportStatus();
   await rebuildAssemblyScene();
   // Tracks the just-built geometry (incl. the assembly's post-rebuild grid lift); a no-op mid-drag so it doesn't fight the pointer.
   refreshGizmo();
   refreshZonePickMeshes();
   // Here, not beside each setExportReady, so the summary follows every one.
   renderExportSummary();
+  renderExportHint();
   // Every rebuild is the state settling after an edit — the one choke point nearly every mutation funnels through, cheaper than hooking each setter.
   schedulePersist();
 }
@@ -508,7 +517,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     poseAssemblyForDisplay();
     renderColorList(null);
     renderWarnings();
-    setExportReady(false);
+    setExportReady(false, 'Load a design to export.');
     if (!state.assembly.parts.some((p) => p.loaded)) $('#stat-tris').textContent = '0 tris';
     const primary = state.assembly.parts.find((p) => p.loaded && !p.isDuplicateOf);
     const nrm = primary ? asmPartFaceNormal(primary, state.assembly.parts) : null;
@@ -562,8 +571,13 @@ async function rebuildAssemblyScene(): Promise<void> {
   } catch (e) {
     // Whatever went wrong, the last result is still on screen and no longer matches the panels.
     lastAssemblyBuild = null;
-    setExportReady(false);
     const cancelled = e instanceof RebuildCancelled;
+    setExportReady(
+      false,
+      cancelled
+        ? 'The rebuild was cancelled. Change a setting to rebuild.'
+        : "The rebuild didn't finish. See the warnings.",
+    );
     if (!cancelled && !(e instanceof BuildWorkerCrashed) && !(e instanceof BuildWorkerFault))
       throw e;
     // Caught here, not in the scheduler, so the tail of rebuildCurrent still runs: it has the only
@@ -584,7 +598,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     poseAssemblyForDisplay();
     renderColorList(null);
     renderWarnings();
-    setExportReady(false);
+    setExportReady(false, "The rebuild didn't finish. See the warnings.");
     refreshModelShadows();
     frameModelIfPending();
     return;
@@ -668,7 +682,11 @@ async function rebuildAssemblyScene(): Promise<void> {
   renderColorList(colorListEntries, { rawColorCount: built.detectedColors.length });
   renderBaseColorSwatches();
   renderWarnings();
-  setExportReady(built.partOutputs.length > 0);
+  // No inlay and no color turned body color: the file would print a blank part.
+  if (!built.partOutputs.length) setExportReady(false, 'There is no part to print yet.');
+  else if (!shipped.size && !built.baseAssigned)
+    setExportReady(false, 'No color lands on the part. Move the design or lower Scale.');
+  else setExportReady(true);
   refreshModelShadows();
   frameModelIfPending();
 }
