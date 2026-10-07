@@ -59,7 +59,13 @@ import { refreshGizmo } from '../src/scene/designGizmo';
 import { refreshZonePickMeshes } from '../src/scene/zonePick';
 import { schedulePersist } from '../src/state/persist';
 import { invalidate, setPreferredViewDir } from '../src/scene/viewport';
-import { asmRebuildGeneratedParts } from '../src/assembly/parts';
+import {
+  asmCreateRolePart,
+  asmLoadLibraryEntryIntoPart,
+  asmRebuildGeneratedParts,
+  warnMissingParts,
+} from '../src/assembly/parts';
+import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 import { WARNINGS, clearWarnings, warnBuild } from '../src/warnings';
 import { RebuildCancelled } from '../src/cancel';
 import { BuildWorkerCrashed, BuildWorkerFault } from '../src/app/buildClient';
@@ -1164,5 +1170,25 @@ describe('why Export is off', () => {
     await rebuildCurrent();
     expect(exportDisabled()).toBe(false);
     expect(exportBlockedReason()).toBeNull();
+  });
+});
+
+describe('a part that failed to load', () => {
+  it('is warned about again after an artwork load clears the notices', async () => {
+    state.assembly.kindId = 'wheel';
+    const role = ASSEMBLY_KINDS.find((k) => k.id === 'wheel')!.roles[0];
+    const part = asmCreateRolePart(role);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    await asmLoadLibraryEntryIntoPart(
+      part,
+      { id: 'wheel-half', name: 'Wheel', file: 'stl/wheel-half.3mf' },
+      { quiet: true },
+    );
+    warnMissingParts(state.assembly.parts);
+    clearWarnings(); // what applyParsedSVG does
+
+    await rebuildCurrent();
+
+    expect(WARNINGS.some((w) => /export will be missing/.test(w.message))).toBe(true);
   });
 });

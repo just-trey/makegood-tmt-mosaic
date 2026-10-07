@@ -1888,6 +1888,21 @@ produce an open edge.
   outline, two islands sharing a corner) doesn't raise this. That case traces
   correctly.
 
+## Troubleshooting: "Couldn't load "…", so the export will be missing it"
+
+A part's file didn't download (a 404, a dropped connection) or didn't parse. The
+alert named the part; this warning stays after it is dismissed.
+
+- **Export still works, without that part.** The 3MF holds every part that did
+  load. The wheel with no Top exports its Cap alone; a chair missing one part
+  exports the other twelve.
+- **Reload the page to try again.** The warning clears when a later load of the
+  part succeeds, or when the part type changes.
+- **A part type that fails as a whole** is not left half loaded. Switching to it
+  puts the previous one back, with an alert, and this warning is not raised.
+- If it keeps happening, the file is missing from the deploy: check the browser's
+  network tab for the named file under `stl/`.
+
 ## Troubleshooting: "Couldn't send that" in the feedback panel
 
 The Feedback panel posts to Formspree. Two failures show there, and neither

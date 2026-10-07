@@ -36,7 +36,33 @@ function notifyPartsChanged(): void {
   for (const w of WARNINGS)
     if (w.key && w.key.startsWith(FACE_EDGE_PREFIX) && !live.has(w.key)) stale.push(w.key);
   for (const k of stale) dismissNotice('', k);
+  // Retracted on any list change: a later successful load, a kind switch or a rollback all end here.
+  const missing = new Set(
+    state.assembly.parts.filter((p) => failedLoads.has(p) && !p.loaded).map(missingPartKey),
+  );
+  const gone = WARNINGS.filter(
+    (w) => w.key?.startsWith(MISSING_PART_PREFIX) && !missing.has(w.key),
+  );
+  for (const w of gone) dismissNotice('', w.key);
   onPartsChanged();
+}
+
+const MISSING_PART_PREFIX = 'part-missing:';
+const missingPartKey = (part: AssemblyPart): string => MISSING_PART_PREFIX + part.id;
+// Marked at the failure, not derived from `!loaded`: a part is unloaded all through a healthy load.
+const failedLoads = new WeakSet<AssemblyPart>();
+
+/**
+ * Standing warning for every part in the list whose file failed. Re-stated each assembly rebuild
+ * (rebuild.ts) because an artwork load's clearWarnings() drops it; a closed pill returns on the next one.
+ */
+export function warnMissingParts(parts: AssemblyPart[]): void {
+  for (const p of parts)
+    if (failedLoads.has(p) && !p.loaded)
+      warn(
+        `Couldn't load "${p.name}", so the export will be missing it. Reload the page to try again.`,
+        missingPartKey(p),
+      );
 }
 
 const FACE_EDGE_PREFIX = 'face-edge:';
@@ -130,6 +156,8 @@ export async function asmLoadFullAssembly({ quiet = false } = {}): Promise<Assem
     if (!quiet) await alertDialog('Failed to load the assembly: ' + (e as Error).message);
   }
   notifyPartsChanged();
+  // Quiet loads are rolled back by their caller, so nothing is left standing to warn about.
+  if (!quiet) warnMissingParts(myParts);
   hideOverlay(curtain);
   scheduleRebuild();
   return outcome;
@@ -207,6 +235,7 @@ export async function asmLoadLibraryEntryIntoPart(
     await asmLoadPartBuffer(part, buf, entry.file);
     return true;
   } catch (e) {
+    failedLoads.add(part);
     const msg = `Could not load library part "${entry.name}" from ${entry.file}: ${(e as Error).message}`;
     if (quiet) console.error(msg);
     else await alertDialog(msg);

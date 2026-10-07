@@ -33,7 +33,11 @@ import {
   generatedFitFactor,
   hubcapSilhouetteOffset,
 } from '../assembly/kinds';
-import { asmRebuildGeneratedParts, generatedPartsNeedRebuild } from '../assembly/parts';
+import {
+  asmRebuildGeneratedParts,
+  generatedPartsNeedRebuild,
+  warnMissingParts,
+} from '../assembly/parts';
 import {
   frameModelIfPending,
   getModelGroup,
@@ -475,6 +479,9 @@ export function artworkBuildInputs(): ArtworkBuildInput[] {
 }
 
 async function rebuildAssemblyScene(): Promise<void> {
+  // Re-stated per pass: every artwork load calls clearWarnings(), which would drop a push-once notice
+  // while the part is still missing (same as csgFault's resetCsgFaults).
+  warnMissingParts(state.assembly.parts);
   // The sliders and gizmo write the legacy globals; the instance is where assembly mode reads
   // placement. Sync FIRST: a part whose shape follows the artwork is regenerated below and reads the
   // instance, and left later its outline was built from the previous placement and the picture from
