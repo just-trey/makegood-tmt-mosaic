@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-06
+
 ### Added
 
 - **`bench-raster.ts dropped-next` counts raise-Detail notices whose trace 20
@@ -27,6 +29,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   are the zebra pattern. `docs/findings/2026-09-27-clip-ink-sweep.md`;
   re-derive with `RUN_CLIP_INK_SWEEP=1 npx vitest run
 scripts/measure-clip-ink.test.ts`.
+
+- **`scripts/bench-regions.ts` times the region pass's per-colour merge.**
+  `merge` times it inside the real pass; `chunks` sweeps a chunk size over it.
+  The sweep closed the plan to chunk that merge: a colour's pieces never
+  overlap, so the last call still carries nearly every point. On 800 disjoint
+  pieces, chunks of 25-400 cut the longest call only from 345ms to 248-322ms,
+  at 1.3-1.9x the total time
+  (`node_modules/.bin/vite-node scripts/bench-regions.ts chunks`).
+
+- **The chair body is back in the Part dropdown.** It has been reachable only by
+  URL since the beta narrowed to three parts, while the work behind it kept
+  going: design zones across the whole chair, mirroring onto a zone's twin or
+  across its own centre line, the Whole chair sheet that lets one design cross
+  every zone, and the seam and hidden-surface warnings that go with them. The
+  help panel and this README already described all of it. Picking Standard or
+  Kit casters comes back with it.
+
+  Two things it does not get. **Fill is still not offered on the chair**: it took
+  93.6s to settle on one zone, "All zones" did not finish inside 900s, and it
+  dropped a colour on one part. Sticker works normally. And the pattern strip
+  stays hidden everywhere, which is unchanged.
+
+  Read the limitations in the README before printing one. The prime-tower
+  positions are checked on 270mm and 256mm beds only, and the caster mounts and
+  Seat center take no artwork.
+
+- **The 3D view now cross-hatches the surface a "Whole chair" design gives up
+  to another sheet.** It looked live and refused the mark anyway, which read
+  as the design vanishing and reappearing 44mm away on the Back. On the chair
+  that is 8,668mm² of the left flank and 8,158mm² of the right (the bake
+  prints each: `npx vite-node scripts/bake-zones.mjs
+scripts/zone-configs/chair-body.json`). The hatch is
+  only drawn while the row being edited is bound to Whole chair, because a row
+  bound to a zone by name still cuts every bit of it. Click that row and the
+  hatch goes. It crosses in two directions in the second accent colour, the
+  same pair of marks the printed whole-chair sheet uses, so it does not read as
+  the single-direction hatch over surface another part hides.
+- **A "Whole chair" design drawn across two sheets that don't join now says
+  so.** The template already drew that part of the edge as a dotted line; the
+  build now warns when a design actually crosses one, names both zones, and
+  gives the distance the two pieces end up apart on the chair (about 34mm on
+  the left flank's edge with the Back, about 178mm on the right's). It stays
+  quiet where the sheets really do join, and where the whole design landed on
+  one sheet and came out in one piece.
+- **A design can now cover the whole chair at once, instead of one zone at a
+  time.** "Whole chair" in an artwork row's zone dropdown places that design
+  across every sheet of the chair's unfolded layout in one go, cut from a
+  single new design template (Part panel, next to the per-zone ones). Where
+  two sheets really join — part of left/back and part of back/right — a mark
+  drawn across the join continues on the far side. That is only part of each
+  boundary: elsewhere the two sheets sit side by side without joining, and the
+  template draws a real join on a solid line and the rest on a dotted one.
+  The other sheets sit beside their neighbour with a visible gap and don't
+  connect. Where two sheets lie over each other, the seam
+  between them decides which one cuts, so a mark on the sheet lands in exactly
+  one place; the template hatches those areas and names the sheet that gets
+  them. Binding a design to that zone by name still reaches all of its
+  surface. Mirror isn't offered yet on a design set to cover the whole part.
+- **A design can mirror onto its zone's twin, or across its own centre.** A
+  Mirror checkbox on an artwork row bound to a zone that offers one cuts the
+  same design on the twin zone, reflected — the two sides line up within
+  0.3mm on the flanks, 95th percentile, measured by
+  `scripts/measure-zone-mirror.mjs`. A zone with no twin, like the chair's
+  front and back panels, mirrors across its own centre line instead: the
+  design's near half is kept and reflected onto the far half, with a notice
+  when the crop crosses it.
+- **The chair no longer spends filament changes on surface the wheels and
+  cushions hide.** The parts of a design surface that another part covers once
+  the chair is assembled are now marked at bake time and cut out of the
+  artwork. Artwork still runs 20mm past the visible edge (`covers.bleedMm` in
+  `scripts/zone-configs/chair-body.json`), so a slightly shifted wheel or
+  cushion never reveals blank plastic. The hidden areas show crosshatched in
+  the 3D view before any artwork is placed, and hatched on the printable
+  templates, so the cut is never a surprise.
+- **The wheel's blocked-out area is a real circle.** It reads as an arc across
+  the side sheet, runs right up to the axle opening, and carries on over the
+  mount-to-fender join instead of stopping in a straight line at the join. The
+  bake used to reconstruct the shadow by sampling rays against the wheel and
+  its edge wandered; the wheel's config entry now declares
+  `declaredShadow: true` and the dead area is drawn directly as the declared
+  140mm tire radius minus the 20mm edge margin, around the wheel's own mounted
+  position. What another cover hides (the cushions, the casters) is still
+  derived the old way.
+- **Left and right block out the same areas.** The chair is symmetric and its
+  answer now is too: the two sides differ by 0.6% where they differed by 5.3%
+  when this work started (27,174 vs 27,009mm² in the per-zone `dead` lines of
+  `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`),
+  and each fender used to keep the wheel's whole shadow or none of it
+  depending on which side it was.
 
 ### Changed
 
@@ -50,6 +141,25 @@ scripts/measure-clip-ink.test.ts`.
   The edge-cut, Fill-overlap, overlap, SVG-size, hubcap and depth-field
   messages are shorter, and "dominant member" tooltips read "main color".
   `docs/troubleshooting.md` quotes match.
+
+- **The Back sheet now reaches around the storage-box corners, and meets the
+  side sheets there.** A strip of each corner belonged to no sheet at all, so
+  the Back and the side stopped 8mm short of each other.
+  `scripts/measure-zone-seams.mjs` read that 8mm gap on the previous sidecar
+  (69afabf) and reads 0 on this one. The Back is 34.5mm wider for it, and over
+  the 122mm the corner runs a mark drawn to the edge of one sheet continues on
+  the other within 1.8mm, 95th percentile. A saved design on the Back barely
+  moves: the sheet grew by the same amount on both corners, so its centre
+  stayed within a quarter of a millimetre of the chair's centre line, and did
+  not move up or down at all.
+
+- **The seat pan takes no design.** The cushion covers all of it, so no zone
+  reaches it any more and it prints in one colour. The `Seat` zone became `Left
+seat side` and `Right seat side` on the two shelves either side of the pan,
+  which the covers block 81% of (13,971 of 17,166mm², the same bake log's
+  `dead` figure over the zone's claim) and which stay selectable for the rest. A
+  saved session naming the old zone says so on restore and moves that design to
+  All zones.
 
 ### Fixed
 
@@ -279,35 +389,6 @@ check:zone-occlusion` on the chair went from 13 failures (48/42/1/42
 - **The `opacity` property is now read at all.** `opacity="0"` on a shape hides
   it; before, only `fill-opacity` could (`npx vitest run tests/parse.test.ts`).
 
-### Added
-
-- **`scripts/bench-regions.ts` times the region pass's per-colour merge.**
-  `merge` times it inside the real pass; `chunks` sweeps a chunk size over it.
-  The sweep closed the plan to chunk that merge: a colour's pieces never
-  overlap, so the last call still carries nearly every point. On 800 disjoint
-  pieces, chunks of 25-400 cut the longest call only from 345ms to 248-322ms,
-  at 1.3-1.9x the total time
-  (`node_modules/.bin/vite-node scripts/bench-regions.ts chunks`).
-
-- **The chair body is back in the Part dropdown.** It has been reachable only by
-  URL since the beta narrowed to three parts, while the work behind it kept
-  going: design zones across the whole chair, mirroring onto a zone's twin or
-  across its own centre line, the Whole chair sheet that lets one design cross
-  every zone, and the seam and hidden-surface warnings that go with them. The
-  help panel and this README already described all of it. Picking Standard or
-  Kit casters comes back with it.
-
-  Two things it does not get. **Fill is still not offered on the chair**: it took
-  93.6s to settle on one zone, "All zones" did not finish inside 900s, and it
-  dropped a colour on one part. Sticker works normally. And the pattern strip
-  stays hidden everywhere, which is unchanged.
-
-  Read the limitations in the README before printing one. The prime-tower
-  positions are checked on 270mm and 256mm beds only, and the caster mounts and
-  Seat center take no artwork.
-
-### Fixed
-
 - **The Back design sheet no longer draws four no-print slots that aren't
   there.** Two on each handle, about 60mm long and under 2mm across. They were
   folds in the unwrap rather than holes in the chair: loops that double back on
@@ -322,97 +403,6 @@ check:zone-occlusion` on the chair went from 13 failures (48/42/1/42
   which moves what the flanks hand it on the whole-chair sheet by 2.7mm² in
   total. Re-baked by `npx vite-node scripts/bake-zones.mjs
 scripts/zone-configs/chair-body.json`.
-
-### Changed
-
-- **The Back sheet now reaches around the storage-box corners, and meets the
-  side sheets there.** A strip of each corner belonged to no sheet at all, so
-  the Back and the side stopped 8mm short of each other.
-  `scripts/measure-zone-seams.mjs` read that 8mm gap on the previous sidecar
-  (69afabf) and reads 0 on this one. The Back is 34.5mm wider for it, and over
-  the 122mm the corner runs a mark drawn to the edge of one sheet continues on
-  the other within 1.8mm, 95th percentile. A saved design on the Back barely
-  moves: the sheet grew by the same amount on both corners, so its centre
-  stayed within a quarter of a millimetre of the chair's centre line, and did
-  not move up or down at all.
-
-### Added
-
-- **The 3D view now cross-hatches the surface a "Whole chair" design gives up
-  to another sheet.** It looked live and refused the mark anyway, which read
-  as the design vanishing and reappearing 44mm away on the Back. On the chair
-  that is 8,668mm² of the left flank and 8,158mm² of the right (the bake
-  prints each: `npx vite-node scripts/bake-zones.mjs
-scripts/zone-configs/chair-body.json`). The hatch is
-  only drawn while the row being edited is bound to Whole chair, because a row
-  bound to a zone by name still cuts every bit of it. Click that row and the
-  hatch goes. It crosses in two directions in the second accent colour, the
-  same pair of marks the printed whole-chair sheet uses, so it does not read as
-  the single-direction hatch over surface another part hides.
-- **A "Whole chair" design drawn across two sheets that don't join now says
-  so.** The template already drew that part of the edge as a dotted line; the
-  build now warns when a design actually crosses one, names both zones, and
-  gives the distance the two pieces end up apart on the chair (about 34mm on
-  the left flank's edge with the Back, about 178mm on the right's). It stays
-  quiet where the sheets really do join, and where the whole design landed on
-  one sheet and came out in one piece.
-- **A design can now cover the whole chair at once, instead of one zone at a
-  time.** "Whole chair" in an artwork row's zone dropdown places that design
-  across every sheet of the chair's unfolded layout in one go, cut from a
-  single new design template (Part panel, next to the per-zone ones). Where
-  two sheets really join — part of left/back and part of back/right — a mark
-  drawn across the join continues on the far side. That is only part of each
-  boundary: elsewhere the two sheets sit side by side without joining, and the
-  template draws a real join on a solid line and the rest on a dotted one.
-  The other sheets sit beside their neighbour with a visible gap and don't
-  connect. Where two sheets lie over each other, the seam
-  between them decides which one cuts, so a mark on the sheet lands in exactly
-  one place; the template hatches those areas and names the sheet that gets
-  them. Binding a design to that zone by name still reaches all of its
-  surface. Mirror isn't offered yet on a design set to cover the whole part.
-- **A design can mirror onto its zone's twin, or across its own centre.** A
-  Mirror checkbox on an artwork row bound to a zone that offers one cuts the
-  same design on the twin zone, reflected — the two sides line up within
-  0.3mm on the flanks, 95th percentile, measured by
-  `scripts/measure-zone-mirror.mjs`. A zone with no twin, like the chair's
-  front and back panels, mirrors across its own centre line instead: the
-  design's near half is kept and reflected onto the far half, with a notice
-  when the crop crosses it.
-- **The chair no longer spends filament changes on surface the wheels and
-  cushions hide.** The parts of a design surface that another part covers once
-  the chair is assembled are now marked at bake time and cut out of the
-  artwork. Artwork still runs 20mm past the visible edge (`covers.bleedMm` in
-  `scripts/zone-configs/chair-body.json`), so a slightly shifted wheel or
-  cushion never reveals blank plastic. The hidden areas show crosshatched in
-  the 3D view before any artwork is placed, and hatched on the printable
-  templates, so the cut is never a surprise.
-- **The wheel's blocked-out area is a real circle.** It reads as an arc across
-  the side sheet, runs right up to the axle opening, and carries on over the
-  mount-to-fender join instead of stopping in a straight line at the join. The
-  bake used to reconstruct the shadow by sampling rays against the wheel and
-  its edge wandered; the wheel's config entry now declares
-  `declaredShadow: true` and the dead area is drawn directly as the declared
-  140mm tire radius minus the 20mm edge margin, around the wheel's own mounted
-  position. What another cover hides (the cushions, the casters) is still
-  derived the old way.
-- **Left and right block out the same areas.** The chair is symmetric and its
-  answer now is too: the two sides differ by 0.6% where they differed by 5.3%
-  when this work started (27,174 vs 27,009mm² in the per-zone `dead` lines of
-  `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`),
-  and each fender used to keep the wheel's whole shadow or none of it
-  depending on which side it was.
-
-### Changed
-
-- **The seat pan takes no design.** The cushion covers all of it, so no zone
-  reaches it any more and it prints in one colour. The `Seat` zone became `Left
-seat side` and `Right seat side` on the two shelves either side of the pan,
-  which the covers block 81% of (13,971 of 17,166mm², the same bake log's
-  `dead` figure over the zone's claim) and which stay selectable for the rest. A
-  saved session naming the old zone says so on restore and moves that design to
-  All zones.
-
-### Fixed
 
 - **Hovering the artwork dropzone no longer looks the same as dragging a file
   over it.** `#dropzone:hover` and its drag-over state rendered identically —
@@ -1839,7 +1829,8 @@ Initial public alpha. Baseline feature set as of this release:
 - Automatic boolean-failure recovery: vertex deduplication, degenerate-sliver
   scrubbing, and reduced-precision retries for self-intersecting source paths.
 
-[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.4.1...v0.5.0
