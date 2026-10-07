@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A chair design on only some zones now shows it before Export.** The "zones
+  still blank" message is a warning instead of a quiet notice, and the line
+  above the Export button says "Artwork on 1 of 8 zones". The second warning
+  that appeared only after the file downloaded is gone. Export stays on.
 - **A disabled Export now says why.** One line under the button covers no design,
   a design that lands entirely off the part, a cancelled rebuild and a failed one.
   A design with no color on the part now turns Export off instead of saving a

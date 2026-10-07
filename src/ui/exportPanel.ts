@@ -98,8 +98,6 @@ function showExportStatus(fname: string, plates: number | null, filaments: numbe
   el.hidden = false;
 }
 
-const COVERAGE_WARNING_SUFFIX = 'will print body-colored with no design.';
-
 /**
  * What the export will contain, stated before the button is pressed (convention 24).
  *
@@ -143,8 +141,15 @@ export function renderExportSummary(): void {
     delete el.dataset.plates;
   }
   rows.push(`${filaments.length} filament${filaments.length === 1 ? '' : 's'}`);
+  const { total: zoneTotal, covered: zoneCovered } = zoneCoverage();
+  // Beside the button, where the build's standing warning is easy to have scrolled past.
+  const coverage =
+    zoneTotal > 1 && zoneCovered < zoneTotal
+      ? `<div class="export-summary-coverage">Artwork on ${zoneCovered} of ${zoneTotal} zones</div>`
+      : '';
   el.innerHTML =
     `<div class="export-summary-line">${rows.join(' · ')}</div>` +
+    coverage +
     `<div class="export-summary-swatches">${filaments
       .map(
         (f) =>
@@ -208,27 +213,6 @@ function keptPartOutputs(
   });
 }
 
-/**
- * The last guardrail before an incomplete-coverage chair export downloads: rebuild.ts shows an info
- * pill the whole time it's true, easy to have scrolled past by Export. Escalated to warn() as the
- * last moment before the file (the gap that caught scripts/export-chair-examples.mjs's own author).
- * Doesn't block: the app's pattern is warn-but-proceed (see the missing-geometry filter below), and
- * a hard block, themed dialog or not, would be a bigger behavior change than intended.
- */
-function warnIfIncompleteZoneCoverage(): void {
-  for (let i = WARNINGS.length - 1; i >= 0; i--) {
-    if (WARNINGS[i].message.endsWith(COVERAGE_WARNING_SUFFIX)) WARNINGS.splice(i, 1);
-  }
-  const { total, covered } = zoneCoverage();
-  if (total > 1 && covered < total) {
-    warn(
-      `Exporting with artwork on ${covered} of ${total} zones. The other ${total - covered} ` +
-        (total - covered === 1 ? 'zone ' : 'zones ') +
-        COVERAGE_WARNING_SUFFIX,
-    );
-  }
-}
-
 export async function exportPrintReady3MF(): Promise<void> {
   const bodyColor = baseColorHex().toUpperCase();
   // captured now, not read at track() time: the export button disables during the awaits but #shape-kind doesn't, so state.assembly.kindId can move mid-export
@@ -238,7 +222,6 @@ export async function exportPrintReady3MF(): Promise<void> {
   if (!built || !built.partOutputs.length) return;
   clearStalePlacementNotices();
   clearExportStatus();
-  warnIfIncompleteZoneCoverage();
   const palette = built.palette;
   const kept = keptPartOutputs(built, (msg) => warn(msg));
   // Only palette colors with an inlay on some exported part become materials; one whose regions all

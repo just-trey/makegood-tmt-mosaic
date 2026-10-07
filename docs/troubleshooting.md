@@ -1563,25 +1563,27 @@ the thin spot keeps its full depth.
 Grouped like the part-wide warning: one pill per part per pair of numbers,
 naming every colour that shares it.
 
-## Troubleshooting: "… zones still blank" notices (assembly mode)
+## Troubleshooting: "… zones still blank" warnings (assembly mode)
 
 Full text: _"…: … of … zones still blank. Add more from the zone dropdown, or
 pick "All zones" to cover every zone."_ ("zone", singular, when only one is
 missing.)
 
-**An informational notice, not a warning**, on a part offering more than one
+**A warning that stays up while it's true**, on a part offering more than one
 design zone (the chair body is the only shipped example). By default a loaded
 design binds to one zone only, since binding every zone would recut the whole
-part on every nudge. The notice exists because that default is easy to miss: a
+part on every nudge. The warning exists because that default is easy to miss: a
 design bound to one zone of five looks like a finished part in the viewport,
 right up until it's opened in a slicer and most of it prints in the base color.
+The line above the Export button repeats it as "Artwork on 1 of 8 zones". It
+doesn't block the export.
 
 **What to do.** Either is fine, depending on what you want:
 
 - **Add more designs**, one per zone, from each zone's dropdown.
 - **Pick "All zones"** on one design to cover every zone with it.
 - **Leave it as is**, if you only meant to decorate part of the piece. The
-  notice makes the coverage visible; it doesn't ask you to change anything.
+  warning makes the coverage visible; it doesn't ask you to change anything.
 
 ## Troubleshooting: "… designs were on zones this part no longer has"
 
@@ -1702,21 +1704,6 @@ those two edges, this is what happens.
   all of one zone's surface and stops at its edge, so there is no second piece.
 - Two marks meant to line up across the join have to sit on the solid stretch.
   Nothing else on that edge lines up.
-
-## Troubleshooting: "Exporting with artwork on … of … zones…" warnings
-
-Full text: _"Exporting with artwork on … of … zones. The other … zones will
-print body-colored with no design."_ ("zone", singular, for one.)
-
-The same coverage gap as the notice above, escalated to a red pill at the last
-moment before an export downloads — easy to have scrolled past earlier, harder
-to miss right before the file. It doesn't block the export: the file is valid
-and prints fine, just with blank zones.
-
-**What to do.** Same as above: add more designs, or switch one to "All zones",
-if the blank zones weren't intentional. If they were — you're decorating one
-panel and leaving the rest plain — there's nothing to change; the export
-proceeds either way.
 
 ## Troubleshooting: "has no verified print placement" warnings
 

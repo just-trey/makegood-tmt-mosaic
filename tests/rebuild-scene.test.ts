@@ -936,6 +936,8 @@ describe('the blank-zone notice', () => {
     const msg = WARNINGS.map((w) => w.message).join('\n');
     expect(msg).toContain('Placed on "front"');
     expect(msg).toContain('2 of 3 zones still blank');
+    // a standing warning, not a quiet notice: it has to read as something to act on before Export
+    expect(WARNINGS.find((w) => w.message.includes('still blank'))?.level).toBe('warn');
   });
 
   it('says nothing when every zone is covered', async () => {

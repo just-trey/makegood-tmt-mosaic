@@ -539,9 +539,9 @@ async function rebuildAssemblyScene(): Promise<void> {
 
   const artworks = artworkBuildInputs();
   // The default binding (loadArtworkSource) silently picks the first zone, since binding every zone
-  // recuts everything on each nudge. Surfaced here rather than left to the per-row dropdown: it
-  // caught scripts/export-chair-examples.mjs's own author, and yields a print that looks right
-  // (colored patch, nonzero color count) until opened in a slicer.
+  // recuts everything on each nudge. A warning, not a notice, and mirrored in #export-summary: an
+  // info pill was scrolled past, and the print looks right (colored patch, nonzero color count)
+  // until opened in a slicer. It caught scripts/export-chair-examples.mjs's own author.
   const { total: zoneTotal, covered: zoneCovered } = zoneCoverage();
   if (zoneTotal > 1 && zoneCovered < zoneTotal) {
     const blank = zoneTotal - zoneCovered;
@@ -552,7 +552,7 @@ async function rebuildAssemblyScene(): Promise<void> {
       boundNames.length === 1
         ? `Placed on "${boundNames[0]}"`
         : `${zoneCovered} of ${zoneTotal} zones have artwork`;
-    noticeBuild(
+    warnBuild(
       `${where}: ${blank} of ${zoneTotal} zone${zoneTotal === 1 ? '' : 's'} still blank. Add more from the zone dropdown, or pick "All zones" to cover every zone.`,
     );
   }
