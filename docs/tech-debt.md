@@ -926,3 +926,16 @@ count. None of them reaches the print as drawn.
 - Found while fixing the inherited `fill="none"` cascade (#363). No shipped or fixture SVG sets a fill on
   a group (`RUN_SVG_SKIP_SWEEP=1 npx vitest run scripts/measure-svg-skipped-content.test.ts`).
 - **Closing it**: treat an unparseable own fill as `inherit` in `paint()` (src/svg/parse.ts).
+
+## A build-worker cancel test fails under coverage load and passes alone — unmeasured
+
+- `tests/build-worker.test.ts` "answers a cancel at once, honoured, and reuses the worker once it has
+  stopped" failed once in each of the #366 and #367 runs of `npm run test:coverage`. Both passed on rerun.
+  That is 2 of the batch's ~4 full runs (the count is the orchestrator's, not a logged command).
+- It passes alone (`npx vitest run tests/build-worker.test.ts`). Which assertion failed was not kept.
+- **The cause is unmeasured.** One candidate, unverified: the test uses real timers and sleeps 200ms inside
+  the 1s `CANCEL_GRACE_MS` ([src/app/buildClient.ts](../src/app/buildClient.ts)). A stall of ~800ms under
+  coverage would let the kill timer fire first, so `w.terminated` and `spawned` would be wrong.
+- **Closing it**: capture the failing assertion by looping `npm run test:coverage` until it fails, then
+  fix the cause. If it is the timer, run the test on fake timers as its sibling "terminates a cancelled
+  worker that lingers" already does.
