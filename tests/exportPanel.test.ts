@@ -222,6 +222,22 @@ describe('exportPrintReady3MF — analytics kind', () => {
   });
 });
 
+describe('exportPrintReady3MF — a rebuild that lands during the export', () => {
+  it('does not post the superseded build’s layout notes over the new one’s', async () => {
+    buildWithPalette(1);
+    const stale =
+      '"Top" is placed ~4mm past the edge of the plate. Reposition it in your slicer before printing.';
+    vi.mocked(build3MFCombined).mockImplementationOnce(async () => {
+      buildWithPalette(2); // the rebuild landed, and stated its own notes
+      return { blob: new Blob(), warnings: [stale], notices: [] };
+    });
+
+    await exportPrintReady3MF();
+
+    expect(WARNINGS.map((w) => w.message)).not.toContain(stale);
+  });
+});
+
 describe('exportPrintReady3MF — palette colors with no inlay on any part', () => {
   it('drops them from the materials and remaps the remaining inlays', async () => {
     // the phantom-slot defect: a color clipped off every part shipped as a filament_colour entry

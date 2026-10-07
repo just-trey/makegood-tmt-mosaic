@@ -69,10 +69,9 @@ export const PLACEMENT: Record<string, PartPlacement & { verifiedBeds: readonly 
     verifiedBeds: ['270x270'],
   },
   ...Object.fromEntries(
-    Object.entries(CHAIR_PLACEMENT).map(([id, p]) => [
-      id,
-      { ...p, verifiedBeds: CHAIR_VERIFIED_BEDS },
-    ]),
+    Object.entries(CHAIR_PLACEMENT).map(
+      ([id, p]) => [id, { ...p, verifiedBeds: CHAIR_VERIFIED_BEDS }] as const,
+    ),
   ),
 };
 

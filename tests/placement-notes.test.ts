@@ -32,6 +32,7 @@ import { getLastAssemblyBuild } from '../src/app/rebuild';
 import { buildHubcapBody } from '../src/geometry/hubcap';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 import { state } from '../src/state/store';
+import { setRebuildHandler } from '../src/app/scheduler';
 
 /**
  * The placement notes are computed by the export's own layout, and used to reach the user only
@@ -84,10 +85,12 @@ function buildOf(parts: AssemblyPart[], bodies: Float32Array[]): AssemblyBuild {
   } as AssemblyBuild;
 }
 
-function selectPrinter(id: string): void {
+/** The notes are re-stated once any rebuild the switch starts lands, so this waits for that. */
+async function selectPrinter(id: string): Promise<void> {
   const sel = document.querySelector<HTMLSelectElement>('#p-printer')!;
   sel.value = id;
   sel.dispatchEvent(new Event('change'));
+  await new Promise((r) => setTimeout(r, 0));
 }
 
 beforeAll(() => {
@@ -145,6 +148,46 @@ describe('the hubcap past its verified size: the notes before Export are the one
     },
     30000,
   );
+
+  // A smaller bed clamps the disc and regenerates it. Stated at the switch, the notes measured the
+  // 260mm disc being replaced: "overhangs the 256×256mm plate" for a size never exported.
+  it('waits for the clamp’s rebuild on a printer switch, not the disc it replaces', async () => {
+    const clips = await mesh('hubcap-clips');
+    const disc = async (d: number) =>
+      (await buildHubcapBody({ kind: 'circle', diameterMm: d }, clips)).positions;
+    const big = await disc(260);
+    state.assembly.kindId = 'hubcap';
+    state.hubcapDiameterMm = 260;
+    state.printerId = 'snapmaker-u1';
+    const hubcap = part({
+      name: 'Hubcap',
+      roleId: 'hubcap',
+      libraryPartId: 'hubcap-clips',
+      assetPositions: clips,
+      positions: big,
+    });
+    state.assembly.parts = [hubcap];
+    vi.mocked(getLastAssemblyBuild).mockReturnValue(buildOf([hubcap], [big]));
+    // what rebuildCurrent's tail does, once the clamped disc is built
+    setRebuildHandler(() => {
+      vi.mocked(getLastAssemblyBuild).mockReturnValue(buildOf([hubcap], [hubcap.positions!]));
+      refreshPlacementNotices();
+    });
+    const sel = document.querySelector<HTMLSelectElement>('#p-printer')!;
+    sel.value = 'bambu-x1c';
+    sel.dispatchEvent(new Event('change'));
+    const said = () =>
+      placementNotes()
+        .map((n) => n.message)
+        .join('\n');
+    expect(said()).toBe('');
+    await vi.waitFor(() => expect(said()).toContain('No tower position was saved'), {
+      timeout: 20000,
+    });
+    expect(state.hubcapDiameterMm).toBeLessThan(260);
+    expect(said()).not.toContain('overhangs');
+    setRebuildHandler(() => {});
+  }, 30000);
 });
 
 describe('a baked layout on a bed nobody checked it on', () => {
@@ -178,7 +221,7 @@ describe('a baked layout on a bed nobody checked it on', () => {
   // 270mm tower deltas with nothing said. One line for the 13 parts, not 13 lines.
   it('says so once for the whole chair on the H2D, as information', async () => {
     await loadChair();
-    selectPrinter('bambu-h2d');
+    await selectPrinter('bambu-h2d');
     expect(bedNotes()).toEqual([
       {
         message:
@@ -192,7 +235,7 @@ describe('a baked layout on a bed nobody checked it on', () => {
   it('says nothing on the two beds the chair was checked on', async () => {
     await loadChair();
     for (const printer of ['bambu-x1c', 'snapmaker-u1']) {
-      selectPrinter(printer);
+      await selectPrinter(printer);
       expect(bedNotes(), printer).toEqual([]);
     }
   }, 30000);
@@ -209,25 +252,25 @@ describe('a baked layout on a bed nobody checked it on', () => {
     state.assembly.parts = [footrest];
     vi.mocked(getLastAssemblyBuild).mockReturnValue(buildOf([footrest], [body]));
 
-    selectPrinter('snapmaker-u1');
+    await selectPrinter('snapmaker-u1');
     expect(bedNotes()).toEqual([]);
-    selectPrinter('bambu-x1c');
+    await selectPrinter('bambu-x1c');
     expect(bedNotes().map((n) => n.message)).toEqual([
       "The plate layout for this part hasn't been checked on a 256 × 256mm bed. " +
         'Check the parts and prime tower in your slicer before printing.',
     ]);
-    selectPrinter('bambu-h2d');
+    await selectPrinter('bambu-h2d');
     expect(bedNotes().map((n) => n.message)).toEqual([
       "The plate layout for this part hasn't been checked on a 350 × 320mm bed. " +
         'Check the parts and prime tower in your slicer before printing.',
     ]);
-    selectPrinter('snapmaker-u1');
+    await selectPrinter('snapmaker-u1');
     expect(bedNotes()).toEqual([]);
   });
 
   it('raises no second copy of a note at Export', async () => {
     await loadChair();
-    selectPrinter('bambu-h2d');
+    await selectPrinter('bambu-h2d');
     const before = placementNotes();
     await exportPrintReady3MF();
     expect(placementNotes()).toEqual(before);

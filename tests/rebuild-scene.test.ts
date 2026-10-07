@@ -1216,10 +1216,15 @@ describe('the placement notes, stated after the rebuild rather than after the do
     expect(placementNotes().map((w) => w.level)).toEqual(['warn']);
   });
 
-  it('are stated once however many rebuilds run', async () => {
+  it('replace the last build’s rather than adding to them', async () => {
     await rebuildCurrent();
+    vi.mocked(buildAssemblyGeometry).mockResolvedValue(
+      assemblyBuild({
+        partOutputs: [{ part: asmPart({ name: 'q' }), bodySoup: tri(), inlaySoups: { 0: tri(1) } }],
+      }),
+    );
     await rebuildCurrent();
-    expect(placementNotes()).toHaveLength(1);
+    expect(placementNotes().map((w) => w.message.slice(0, 8))).toEqual(['Part "q"']);
   });
 
   it('cannot cost the rebuild when stating them throws', async () => {

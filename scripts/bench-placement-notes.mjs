@@ -1,10 +1,10 @@
 // What stating the placement notes before Export costs on a real chair build, and what it states.
 //
-// Two costs: after a rebuild (every array is new, so layoutPlates walks every body vertex), read
-// from window.__mosaic.placementRefreshMs; and a printer switch's whole change handler, timed in
-// the page, where the footprints are re-used. Run against a build without the pre-export notes for
-// the A/B on the second (the first reads n/a there). Then prints the placement pills standing per
-// printer before any export, and after one, to see what a user sees.
+// Read from window.__mosaic.placementRefreshMs: the notes after a rebuild (every array is new, so
+// layoutPlates walks every body vertex) and after a printer switch (footprints re-used). Also times
+// the switch's change handler itself, which on a build without the pre-export notes is the A/B
+// (the refresh reads n/a there). Then prints the placement pills standing per printer before any
+// export, and after one, to see what a user sees.
 //
 // Usage: npm run build && MOSAIC_GPU=1 node scripts/bench-placement-notes.mjs [repeats]
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -97,20 +97,31 @@ try {
       (afterRebuilds.length ? stats(afterRebuilds) : 'n/a (this build has no pre-export notes)'),
   );
 
-  const times = Object.fromEntries(PRINTERS.map((p) => [p, []]));
+  const handler = Object.fromEntries(PRINTERS.map((p) => [p, []]));
+  const refresh = Object.fromEntries(PRINTERS.map((p) => [p, []]));
   for (let r = 0; r < REPEATS; r++)
-    for (const id of PRINTERS)
-      times[id].push(
-        await page.evaluate((printerId) => {
-          const sel = document.querySelector('#p-printer');
-          sel.value = printerId;
-          const t0 = performance.now();
-          sel.dispatchEvent(new Event('change', { bubbles: true }));
-          return performance.now() - t0;
-        }, id),
-      );
-  console.log(`printer change handler, ${REPEATS} runs per printer:`);
-  for (const id of PRINTERS) console.log(`  ${id.padEnd(13)} ${stats(times[id])}`);
+    for (const id of PRINTERS) {
+      const [h, ms] = await page.evaluate(async (printerId) => {
+        const sel = document.querySelector('#p-printer');
+        sel.value = printerId;
+        const t0 = performance.now();
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        const h = performance.now() - t0;
+        // the notes are re-stated once the switch's work settles, after the handler returns
+        await new Promise((r) => setTimeout(r, 0));
+        await window.__mosaic.whenIdle();
+        await new Promise((r) => setTimeout(r, 0));
+        return [h, window.__mosaic.placementRefreshMs?.() ?? null];
+      }, id);
+      handler[id].push(h);
+      if (ms != null) refresh[id].push(ms);
+    }
+  console.log(`printer switch, ${REPEATS} runs per printer (change handler | notes after it):`);
+  for (const id of PRINTERS)
+    console.log(
+      `  ${id.padEnd(13)} ${stats(handler[id])}  |  ` +
+        (refresh[id].length ? stats(refresh[id]) : 'n/a'),
+    );
 
   const pills = () =>
     page.$$eval('#warnings .warn-text', (ns) =>

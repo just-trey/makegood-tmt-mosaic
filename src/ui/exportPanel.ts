@@ -338,7 +338,8 @@ export async function exportPrintReady3MF(): Promise<void> {
     const printer = getPrinter(state.printerId);
     const layout = await build3MFCombined(materials, parts, { printer });
     const { blob, warnings: placementWarnings } = layout;
-    postPlacementNotes(layoutNotes(layout));
+    // A rebuild that landed during the await has stated its own; these describe the one before it.
+    if (getLastAssemblyBuild() === built) postPlacementNotes(layoutNotes(layout));
     track('export', {
       format: '3mf',
       mode: 'assembly',
@@ -388,12 +389,16 @@ export function initExportPanel(): void {
     // Affects geometry only through a kind whose build parameter is bounded by the plate (the
     // hubcap diameter) — clampBuildParamToPrinter regenerates then and is a no-op otherwise. It's
     // also the one state change needing its own autosave trigger and slot-count redraw, not a rebuild's.
-    void clampBuildParamToPrinter();
+    //
+    // Every placement message names a bed, plate size or verified pose, so all go now and are
+    // re-stated once a clamp's rebuild lands: stated at once, they described the disc about to be
+    // regenerated (a 260mm hubcap "overhangs" the 256mm bed it is being cut down for).
+    clearStalePlacementNotices();
+    void clampBuildParamToPrinter().finally(() => whenIdle().then(refreshPlacementNotices));
     // re-posts the slot-budget pill against the new printer's numbers as well as redrawing the line
     refreshSlotCountCapacity();
     renderExportSummary();
-    // Every placement message names a bed, plate size or verified pose, so a switch re-states them all; renders.
-    refreshPlacementNotices();
+    renderWarnings();
     schedulePersist();
   });
   const exportBtn = $<HTMLButtonElement>('#btn-export');
