@@ -801,8 +801,7 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 
 - The zone select offers both "All zones" and "Whole chair" with nothing saying how they differ.
 - Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 1, three lenses.
-- **Closing it**: explain or drop one of the two "whole" entries. Make "Load sample artwork" a no-op
-  once loaded and give the sample a size in mm so it raises no note (cycle item 13).
+- **Closing it**: explain or drop one of the two "whole" entries.
 
 ## Placement and prime-tower notices appear only after the file is saved
 

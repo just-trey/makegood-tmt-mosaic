@@ -33,6 +33,16 @@ function dismissColorLoss(sourceId: string): void {
   dismissNotice('', rasterColorLossKey(sourceId));
 }
 
+/** Makes `id` the edited row and brings every panel that follows the active artwork along. */
+export function selectArtwork(id: string): void {
+  setActiveArtwork(id);
+  renderArtworkList();
+  refreshFitInputsFromState();
+  refreshGizmo();
+  // The yielded-canvas hatch is true only while a whole-part row is edited, and selecting is the only change of that row that schedules no rebuild.
+  refreshNetYieldOverlays();
+}
+
 /**
  * The loaded-artwork list under the dropzone: one row per ArtworkInstance (not per source — a source
  * can back several once placed on a second zone). Clicking a row makes it active, repointing the fit
@@ -79,12 +89,7 @@ export function renderArtworkList(): void {
     row.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('select, button')) return;
       if (a.id === state.activeArtworkId) return;
-      setActiveArtwork(a.id);
-      renderArtworkList();
-      refreshFitInputsFromState();
-      refreshGizmo();
-      // The yielded-canvas hatch is true only while a whole-part row is edited, and this is the only handler that changes which row that is without scheduling a rebuild.
-      refreshNetYieldOverlays();
+      selectArtwork(a.id);
     });
 
     const modeSel = row.querySelector<HTMLSelectElement>('.artwork-mode');
