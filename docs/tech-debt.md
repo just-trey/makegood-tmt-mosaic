@@ -801,15 +801,9 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 
 Third consecutive review cycle (bloat, 2026-08-24 beta, [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 2).
 
-- After a download the panel is byte-identical; the browser's download chip is the only signal. A chair
-  export is 26-81MB on 11 plates, and nothing says so.
-- `#export-hint` reads the same enabled or disabled. No artwork, a design entirely off the part, and a
-  cancelled rebuild each disable or empty the export a different way, unexplained (cycle items 10, 12).
 - A part whose file fails to load raises an alert naming it; once dismissed, Export ships the rest with no
   standing warning (wheel: "Cap" only; chair: 12 of 13 parts). Cycle item 6.
-- **Closing it**: one status line under the button after a download (file name, plates, filaments, size);
-  a one-line reason when disabled, one rule for every "nothing to print" case; a standing warning for a
-  part that did not load.
+- **Closing it**: a standing warning for a part that did not load.
 
 ## New chair artwork lands on one zone, so a one-sided chair is the default path
 

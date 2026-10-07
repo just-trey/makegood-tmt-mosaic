@@ -1,6 +1,11 @@
 import { baseColorHex, state } from '../state/store';
 import { nearestFilamentName } from '../state/filaments';
-import { getLastAssemblyBuild, holdExport, isExportReady } from '../app/rebuild';
+import {
+  exportBlockedReason,
+  getLastAssemblyBuild,
+  holdExport,
+  isExportReady,
+} from '../app/rebuild';
 import { whenIdle } from '../app/idle';
 import { asmPartFaceNormal, shippedColorIndices } from '../geometry/assembly';
 import {
@@ -59,6 +64,40 @@ export function clearStalePlacementNotices(): void {
   }
 }
 
+/** The usual hint stands while Export is on, so it is read from the page once rather than duplicated here. */
+let defaultHint: string | null = null;
+
+export function renderExportHint(): void {
+  const el = document.querySelector<HTMLElement>('#export-hint');
+  if (!el) return;
+  defaultHint ??= el.textContent;
+  el.textContent = exportBlockedReason() ?? defaultHint;
+}
+
+export function clearExportStatus(): void {
+  const el = document.querySelector<HTMLElement>('#export-status');
+  if (!el) return;
+  el.textContent = '';
+  el.hidden = true;
+}
+
+function formatSize(bytes: number): string {
+  return bytes < 1024 * 1024
+    ? `${Math.max(1, Math.round(bytes / 1024))}\u00a0KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)}\u00a0MB`;
+}
+
+function showExportStatus(fname: string, plates: number | null, filaments: number, bytes: number) {
+  const el = document.querySelector<HTMLElement>('#export-status');
+  if (!el) return;
+  const bits = [`Saved ${fname}`];
+  // non-breaking spaces so a wrapped line never strands a unit from its number
+  if (plates) bits.push(`${plates}\u00a0plate${plates === 1 ? '' : 's'}`);
+  bits.push(`${filaments}\u00a0filament${filaments === 1 ? '' : 's'}`, formatSize(bytes));
+  el.textContent = bits.join(' · ');
+  el.hidden = false;
+}
+
 const COVERAGE_WARNING_SUFFIX = 'will print body-colored with no design.';
 
 /**
@@ -95,12 +134,11 @@ export function renderExportSummary(): void {
       shipped.has(ci) ? [{ name: nearestFilamentName(p.hex), hex: p.hex }] : [],
     ),
   ];
-  const hinted = platePlan(kept).map((h) => ({ name: h.part.name, plateHint: h.plateHint }));
+  const plates = fixedPlates(platePlan(kept));
   rows.push(`${kept.length} part${kept.length === 1 ? '' : 's'}`);
-  if (partsCarryPlateHints(hinted)) {
-    const plates = groupByPlateHint(hinted, (h) => h.plateHint);
+  if (plates) {
     rows.push(`${plates.length} plate${plates.length === 1 ? '' : 's'}`);
-    el.dataset.plates = plates.map((pl) => pl.map((h) => h.name).join(', ')).join(' | ');
+    el.dataset.plates = plates.map((pl) => pl.join(', ')).join(' | ');
   } else {
     delete el.dataset.plates;
   }
@@ -120,6 +158,13 @@ export function renderExportSummary(): void {
           .join('<br>')}</div>`
       : '');
   el.hidden = false;
+}
+
+/** Part names per plate, or null when the plan doesn't pin plates (the slicer places them then). */
+function fixedPlates(plan: ReturnType<typeof platePlan>): string[][] | null {
+  const hinted = plan.map((h) => ({ name: h.part.name, plateHint: h.plateHint }));
+  if (!partsCarryPlateHints(hinted)) return null;
+  return groupByPlateHint(hinted, (h) => h.plateHint).map((pl) => pl.map((h) => h.name));
 }
 
 /**
@@ -192,6 +237,7 @@ export async function exportPrintReady3MF(): Promise<void> {
   const built = getLastAssemblyBuild();
   if (!built || !built.partOutputs.length) return;
   clearStalePlacementNotices();
+  clearExportStatus();
   warnIfIncompleteZoneCoverage();
   const palette = built.palette;
   const kept = keptPartOutputs(built, (msg) => warn(msg));
@@ -207,6 +253,7 @@ export async function exportPrintReady3MF(): Promise<void> {
   });
   // Plate layout comes from PLACEMENT — verified constants, not computed. platePlan applies it and the pre-export summary reads the same plan, so they can't disagree.
   const plan = platePlan(kept);
+  const plateCount = fixedPlates(plan)?.length ?? null;
   const parts: ExportPart[] = kept.map(
     ({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }, i) => {
       const nrm = asmPartFaceNormal(part, state.assembly.parts);
@@ -256,6 +303,7 @@ export async function exportPrintReady3MF(): Promise<void> {
       ...(exportedKindId ? { kind: exportedKindId } : {}),
     });
     download(blob, fname);
+    showExportStatus(fname, plateCount, materials.length, blob.size);
   } catch (e) {
     console.error(e);
     track('export_failed', { format: '3mf' });

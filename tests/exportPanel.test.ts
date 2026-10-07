@@ -7,12 +7,14 @@ vi.mock('../src/app/rebuild', () => ({
   getLastAssemblyBuild: vi.fn(),
   isExportReady: vi.fn(() => true),
   holdExport: vi.fn(),
+  exportBlockedReason: vi.fn(() => null),
 }));
 vi.mock('../src/geometry/assembly', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/geometry/assembly')>()),
   asmPartFaceNormal: vi.fn(() => null),
 }));
-vi.mock('../src/export/threemf', () => ({
+vi.mock('../src/export/threemf', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/export/threemf')>()),
   build3MFCombined: vi.fn().mockResolvedValue({ blob: new Blob(), warnings: [] }),
 }));
 vi.mock('../src/export/placement', () => ({
@@ -32,15 +34,26 @@ vi.mock('../src/ui/overlay', () => ({
   showOverlay: vi.fn(),
   hideOverlay: vi.fn(),
 }));
+vi.mock('../src/ui/dialogs', () => ({ alertDialog: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../src/analytics/track', () => ({
   track: vi.fn(),
 }));
 
-import { exportPrintReady3MF, initExportPanel } from '../src/ui/exportPanel';
+import {
+  clearExportStatus,
+  exportPrintReady3MF,
+  initExportPanel,
+  renderExportHint,
+} from '../src/ui/exportPanel';
 import { beginWork, endWork } from '../src/app/idle';
 import { refreshSlotBudgetNotice, SLOT_PILL_SUFFIX } from '../src/ui/slotBudget';
 import { getPrinter } from '../src/export/printers';
-import { getLastAssemblyBuild, holdExport, isExportReady } from '../src/app/rebuild';
+import {
+  exportBlockedReason,
+  getLastAssemblyBuild,
+  holdExport,
+  isExportReady,
+} from '../src/app/rebuild';
 import { build3MFCombined } from '../src/export/threemf';
 import { track } from '../src/analytics/track';
 import { state } from '../src/state/store';
@@ -306,5 +319,61 @@ describe('the Export button during a rebuild', () => {
     await flush();
     expect(build3MFCombined).not.toHaveBeenCalled();
     expect(vi.mocked(holdExport).mock.calls).toEqual([[true], [false]]);
+  });
+});
+
+describe('the lines under the Export button', () => {
+  const hint = () => document.querySelector('#export-hint')!.textContent;
+  const status = () => document.querySelector<HTMLElement>('#export-status')!;
+
+  beforeEach(() => {
+    document.body.innerHTML =
+      '<div id="warnings"></div><div id="export-hint">Exports a project 3MF.</div>' +
+      '<div id="export-status" hidden></div>';
+    vi.mocked(exportBlockedReason).mockReturnValue(null);
+  });
+
+  it('gives each disabled case its own line, and the enabled case the usual one', () => {
+    renderExportHint();
+    const enabled = hint();
+    const lines = ['Load a design to export.', 'No color lands on the part.', 'Cancelled.'].map(
+      (reason) => {
+        vi.mocked(exportBlockedReason).mockReturnValue(reason);
+        renderExportHint();
+        return hint();
+      },
+    );
+    expect(new Set([enabled, ...lines]).size).toBe(4);
+    vi.mocked(exportBlockedReason).mockReturnValue(null);
+    renderExportHint();
+    expect(hint()).toBe(enabled);
+  });
+
+  it('states what was saved after a download, and clears when the design changes', async () => {
+    buildWithPalette(2);
+    vi.mocked(build3MFCombined).mockResolvedValueOnce({
+      blob: new Blob([new Uint8Array(3.5 * 1024 * 1024)]),
+      warnings: [],
+    });
+    state.assembly.kindId = 'wheel';
+
+    await exportPrintReady3MF();
+
+    expect(status().hidden).toBe(false);
+    expect(status().textContent).toBe('Saved mosaic-wheel.3mf · 3\u00a0filaments · 3.5\u00a0MB');
+
+    clearExportStatus();
+    expect(status().hidden).toBe(true);
+    expect(status().textContent).toBe('');
+  });
+
+  it('says nothing was saved when the export fails', async () => {
+    buildWithPalette(1);
+    state.assembly.kindId = 'wheel';
+    await exportPrintReady3MF();
+    expect(status().hidden).toBe(false);
+    vi.mocked(build3MFCombined).mockRejectedValueOnce(new Error('boom'));
+    await exportPrintReady3MF();
+    expect(status().hidden).toBe(true);
   });
 });
