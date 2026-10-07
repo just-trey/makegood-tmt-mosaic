@@ -52,6 +52,9 @@ export function selectArtwork(id: string): void {
 export function renderArtworkList(): void {
   const list = $('#artwork-list');
   list.innerHTML = '';
+  const active = state.artworks.find((x) => x.id === state.activeArtworkId);
+  // Derived here, not written per action: restore and remove both left it stale when each set it themselves.
+  $('#svg-fname').textContent = state.sources.find((s) => s.id === active?.sourceId)?.name ?? '';
   if (!state.artworks.length) {
     list.style.display = 'none';
     return;
@@ -216,7 +219,6 @@ export function renderArtworkList(): void {
         dismissNotice('', fillClampKey(source.id));
       }
       renderWarnings();
-      $('#svg-fname').textContent = '';
       renderArtworkList();
       refreshFitInputsFromState();
       refreshGizmo();

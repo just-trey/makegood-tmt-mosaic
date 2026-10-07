@@ -29,9 +29,8 @@ export const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 
 </svg>`;
 
 /** Shared tail of every load path: settle the palette, refresh the panels, rebuild. */
-function afterArtworkLoaded(fname: string): void {
+function afterArtworkLoaded(): void {
   pruneSettingsToPalette();
-  $('#svg-fname').textContent = fname;
   renderArtworkList();
   refreshFitInputsFromState();
   updateOffsetSliderRanges();
@@ -52,7 +51,7 @@ export function applyParsedSVG(
   clearWarnings();
   const parsed = parseSVGDocument(svgText, kind === 'sample' ? 'sample' : undefined);
   loadArtworkSource(parsed, fname, kind, mode, svgText); // adds a new source+instance alongside any already loaded
-  afterArtworkLoaded(fname);
+  afterArtworkLoaded();
 }
 
 /** Number of colors a freshly-loaded image starts at. Deliberately modest: an AMS is four slots plus the body, so a twelve-slot default would be a print this audience can't make. The Colors slider goes to 16. */
@@ -88,7 +87,7 @@ async function applyRasterFile(file: File): Promise<void> {
       regions: result.componentCount,
     });
     announceTrace(instance.sourceId, file.name, result);
-    afterArtworkLoaded(file.name);
+    afterArtworkLoaded();
     renderWarnings();
     track('artwork_load', { source: 'raster' });
   } catch (e) {

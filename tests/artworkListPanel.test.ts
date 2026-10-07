@@ -597,3 +597,32 @@ describe('rasterControls Detail slider — capped and traced', () => {
     ]);
   });
 });
+
+describe('drop-area filename follows the active design', () => {
+  const fname = () => document.getElementById('svg-fname')!.textContent;
+  const removeRow = (i: number) =>
+    document
+      .querySelectorAll<HTMLButtonElement>('.artwork-remove')
+      [i].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+  it('shows the name after a restore that never touched the label', () => {
+    loadDotSource('restored.png');
+    render();
+    expect(fname()).toBe('restored.png');
+  });
+
+  it('keeps the remaining design name when one of two is removed', () => {
+    loadDotSource('first.png');
+    loadDotSource('second.png');
+    render();
+    removeRow(0);
+    expect(fname()).toBe('second.png');
+  });
+
+  it('blanks when the last design is removed', () => {
+    loadDotSource('only.png');
+    render();
+    removeRow(0);
+    expect(fname()).toBe('');
+  });
+});
