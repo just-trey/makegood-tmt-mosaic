@@ -240,7 +240,7 @@ describe('a baked layout on a bed nobody checked it on', () => {
     }
   }, 30000);
 
-  it('follows a printer switch, replacing the last bed’s note rather than adding to it', async () => {
+  it('notes nothing for the footrest on any registered bed', async () => {
     const body = await mesh('footrest');
     state.assembly.kindId = 'footrest';
     const footrest = part({
@@ -252,21 +252,24 @@ describe('a baked layout on a bed nobody checked it on', () => {
     state.assembly.parts = [footrest];
     vi.mocked(getLastAssemblyBuild).mockReturnValue(buildOf([footrest], [body]));
 
-    await selectPrinter('snapmaker-u1');
-    expect(bedNotes()).toEqual([]);
+    for (const printer of ['snapmaker-u1', 'bambu-x1c', 'bambu-h2d']) {
+      await selectPrinter(printer);
+      expect(bedNotes(), printer).toEqual([]);
+    }
+  });
+
+  it('follows a printer switch, replacing the last bed’s note rather than adding to it', async () => {
+    await loadChair();
     await selectPrinter('bambu-x1c');
-    expect(bedNotes().map((n) => n.message)).toEqual([
-      "The plate layout for this part hasn't been checked on a 256 × 256mm bed. " +
-        'Check the parts and prime tower in your slicer before printing.',
-    ]);
+    expect(bedNotes()).toEqual([]);
     await selectPrinter('bambu-h2d');
     expect(bedNotes().map((n) => n.message)).toEqual([
-      "The plate layout for this part hasn't been checked on a 350 × 320mm bed. " +
+      "The plate layout for all 13 parts hasn't been checked on a 350 × 320mm bed. " +
         'Check the parts and prime tower in your slicer before printing.',
     ]);
-    await selectPrinter('snapmaker-u1');
+    await selectPrinter('bambu-x1c');
     expect(bedNotes()).toEqual([]);
-  });
+  }, 30000);
 
   it('raises no second copy of a note at Export', async () => {
     await loadChair();

@@ -142,6 +142,7 @@ describe('the beds each baked layout was checked on', () => {
       bodySoup: soup,
       subs: [{ name: 'Body', matIndex: 0, soup }],
       ...PLACEMENT.footrest,
+      verifiedBeds: ['270x270'],
     };
     const { notices } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], [footrest], {
       printer: getPrinter('bambu-h2d'),
@@ -158,7 +159,14 @@ describe('the beds each baked layout was checked on', () => {
     const { notices } = await build3MFCombined(
       [{ name: 'Body', color: '#cccccc' }],
       [
-        { name: 'Footrest', nsign: 1, bodySoup: soup, subs: sub, ...PLACEMENT.footrest },
+        {
+          name: 'Footrest',
+          nsign: 1,
+          bodySoup: soup,
+          subs: sub,
+          ...PLACEMENT.footrest,
+          verifiedBeds: ['270x270'],
+        },
         { name: 'Unbaked', nsign: 1, bodySoup: soup, subs: sub, plateHint: 2 },
       ],
       { printer: getPrinter('bambu-x1c') },

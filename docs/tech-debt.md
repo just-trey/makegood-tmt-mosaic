@@ -843,6 +843,11 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 - "Reload assembly" on every kind with every part loaded; "Pockets are cut into each part's real mesh"
   stays after artwork loads; Advanced reads "plane offset 170.00mm, 271-pt boundary".
 - Hubcap size stated twice (field, then bold "Actual size 220.0 × 220.0 mm").
+- Bed sizes are spelled two ways: older placement warnings write `256×256mm`, the unchecked-bed note
+  (#374) writes `256 × 256mm` like the printer list. Owner decision 2026-10-08: unify in this sweep.
+- Same change: add a short prime-tower stability tip to the "check it in your slicer" notes (rib wall,
+  tower brim). A wider tower footprint can close the verified part-to-tower clearance, so the tip must
+  not suggest a width change without re-checking.
 - **Closing it**: one copy sweep against the vocabulary table.
 
 ## An outline that crosses itself into equal halves is left out, not split at the crossing

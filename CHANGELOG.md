@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   was saved", "past the edge", "overhangs" and the other placement notes arrived
   only after the file downloaded. They now show as soon as the design is built,
   and change when you pick another printer.
-- **A part laid out for another bed now says so.** The chair on the H2D, and the
-  footrest on any bed but the Snapmaker U1, exported with no note. One line now
+- **A part laid out for another bed now says so.** The chair on the H2D exported
+  with no note. One line now
   says the layout hasn't been checked on that bed, and to check it in your slicer.
 - **The file name under the drop area now stays put.** It was blank after you
   restored a session, and after removing one of two designs. It now shows the

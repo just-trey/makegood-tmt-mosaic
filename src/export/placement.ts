@@ -65,8 +65,8 @@ export const PLACEMENT: Record<string, PartPlacement & { verifiedBeds: readonly 
     plateR: FOOTREST_PLATE_R,
     primeTowerDelta: FOOTREST_PRIME_TOWER_DELTA,
     objectSettings: FOOTREST_OBJECT_SETTINGS,
-    // Only the U1 reference (stubs/footrest reference tower.3mf) has been opened in a slicer.
-    verifiedBeds: ['270x270'],
+    // Owner opened stubs/footrest-check/ footrest-x1c-256x256.3mf and footrest-h2d-350x320.3mf in the slicer 2026-10-08, plus the U1 reference: part and tower confirmed on every plate.
+    verifiedBeds: ['256x256', '270x270', '350x320'],
   },
   ...Object.fromEntries(
     Object.entries(CHAIR_PLACEMENT).map(

@@ -1786,7 +1786,7 @@ Which beds are checked today:
 | -------- | ------------------------------- |
 | Wheel    | 256 × 256, 270 × 270, 350 × 320 |
 | Chair    | 256 × 256, 270 × 270            |
-| Footrest | 270 × 270                       |
+| Footrest | 256 × 256, 270 × 270, 350 × 320 |
 
 **What to do.** Open the file in your slicer and look at each plate before
 printing. Check that no part hangs off the plate and that the prime tower is
