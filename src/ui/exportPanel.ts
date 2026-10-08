@@ -11,6 +11,7 @@ import { asmPartFaceNormal, shippedColorIndices } from '../geometry/assembly';
 import {
   build3MFCombined,
   groupByPlateHint,
+  layoutPlates,
   partsCarryPlateHints,
   type ExportMaterial,
   type ExportPart,
@@ -24,14 +25,14 @@ import { refreshSlotCountCapacity } from './colorList';
 import { refreshSlotBudgetNotice } from './slotBudget';
 import { hideOverlay, showOverlay } from './overlay';
 import { $ } from './dom';
-import { WARNINGS, warn, notice } from '../warnings';
+import { WARNINGS, warn, noticeBuild, warnBuild } from '../warnings';
 import { schedulePersist } from '../state/persist';
 import { renderWarnings } from './warningsView';
 import { track } from '../analytics/track';
 import { alertDialog } from './dialogs';
 
-// suffixes of the placement-related messages this module and build3MFCombined can emit — used to
-// clear a stale one from a previous export attempt before reporting this attempt's
+// suffixes of the placement-related messages this module and layoutPlates can emit — used to clear
+// the last build's or printer's before stating this one's
 export const PLACEMENT_WARNING_SUFFIXES = [
   'even at its best-fit rotation.',
   'double-check for overlap in your slicer.',
@@ -43,6 +44,8 @@ export const PLACEMENT_WARNING_SUFFIXES = [
   // placementNotice's mesh-identity guard — every variant of it ends this way, which
   // tests/placement.test.ts pins so a reworded message can't silently stop being cleared
   'placed automatically. Check it in your slicer before printing.',
+  // layoutPlates' note for a baked layout on a bed nobody checked it on
+  'Check the parts and prime tower in your slicer before printing.',
 ];
 
 function download(blob: Blob, fname: string): void {
@@ -53,9 +56,9 @@ function download(blob: Blob, fname: string): void {
 }
 
 /**
- * Drop any placement message left from a previous export (a smaller printer, or a part swapped back
- * to its verified mesh) so this attempt reports only its own. Callers must re-render afterwards on
- * every path including bail-outs: WARNINGS backs the pills, and mutating it without a render leaves them disagreeing.
+ * Drop every placement message standing (another printer, or a part swapped back to its verified
+ * mesh) so only the current one's are stated. Callers must re-render afterwards on every path
+ * including bail-outs: WARNINGS backs the pills, and mutating it without a render leaves them disagreeing.
  */
 export function clearStalePlacementNotices(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) {
@@ -213,22 +216,29 @@ function keptPartOutputs(
   });
 }
 
-export async function exportPrintReady3MF(): Promise<void> {
-  const bodyColor = baseColorHex().toUpperCase();
-  // captured now, not read at track() time: the export button disables during the awaits but #shape-kind doesn't, so state.assembly.kindId can move mid-export
-  const exportedKindId = state.assembly.kindId;
+type PlacementNote = { message: string; level: 'warn' | 'info' };
 
-  const built = getLastAssemblyBuild();
-  if (!built || !built.partOutputs.length) return;
-  clearStalePlacementNotices();
-  clearExportStatus();
+/**
+ * The materials and parts the export writes for `built`, and the per-part placement notes. One
+ * builder for the export and the notes stated before it, so the two can't disagree. `report` as
+ * in keptPartOutputs.
+ */
+function exportInputs(
+  built: NonNullable<ReturnType<typeof getLastAssemblyBuild>>,
+  report?: (msg: string) => void,
+): {
+  materials: ExportMaterial[];
+  parts: ExportPart[];
+  notes: PlacementNote[];
+  plateCount: number | null;
+} {
   const palette = built.palette;
-  const kept = keptPartOutputs(built, (msg) => warn(msg));
+  const kept = keptPartOutputs(built, report);
   // Only palette colors with an inlay on some exported part become materials; one whose regions all
   // fell off would ship as a filament nothing references, costing an AMS slot (the build warns naming such colors).
   const shipped = shippedColorIndices(kept);
   const matIndexByColor = new Map<number, number>();
-  const materials: ExportMaterial[] = [{ name: 'Body', color: bodyColor }];
+  const materials: ExportMaterial[] = [{ name: 'Body', color: baseColorHex().toUpperCase() }];
   palette.forEach((p, ci) => {
     if (!shipped.has(ci)) return;
     matIndexByColor.set(ci, materials.length);
@@ -236,7 +246,7 @@ export async function exportPrintReady3MF(): Promise<void> {
   });
   // Plate layout comes from PLACEMENT — verified constants, not computed. platePlan applies it and the pre-export summary reads the same plan, so they can't disagree.
   const plan = platePlan(kept);
-  const plateCount = fixedPlates(plan)?.length ?? null;
+  const notes: PlacementNote[] = [];
   const parts: ExportPart[] = kept.map(
     ({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }, i) => {
       const nrm = asmPartFaceNormal(part, state.assembly.parts);
@@ -254,7 +264,7 @@ export async function exportPrintReady3MF(): Promise<void> {
       });
       const { resolution } = plan[i];
       const note = placementNotice(part.name, resolution);
-      if (note) (note.level === 'warn' ? warn : notice)(note.message);
+      if (note) notes.push(note);
       return {
         name: part.name,
         nsign,
@@ -265,6 +275,59 @@ export async function exportPrintReady3MF(): Promise<void> {
       };
     },
   );
+  return { materials, parts, notes, plateCount: fixedPlates(plan)?.length ?? null };
+}
+
+const layoutNotes = (layout: { warnings: string[]; notices: string[] }): PlacementNote[] => [
+  ...layout.warnings.map((message) => ({ message, level: 'warn' as const })),
+  ...layout.notices.map((message) => ({ message, level: 'info' as const })),
+];
+
+/** Build-scoped: they describe one build on one printer, so the next pass's clearBuildWarnings drops them with it. */
+function postPlacementNotes(notes: PlacementNote[]): void {
+  notes.forEach((n) => (n.level === 'warn' ? warnBuild : noticeBuild)(n.message));
+}
+
+/**
+ * State the placement notes for the build on screen and the selected printer, after every rebuild
+ * and printer switch: computed inside the export, they arrived only after the file was saved.
+ */
+export function refreshPlacementNotices(): void {
+  const t0 = performance.now();
+  clearStalePlacementNotices();
+  const built = getLastAssemblyBuild();
+  if (built && isExportReady()) {
+    try {
+      const { parts, notes } = exportInputs(built);
+      postPlacementNotes([
+        ...notes,
+        ...layoutNotes(layoutPlates(parts, { printer: getPrinter(state.printerId) })),
+      ]);
+    } catch (e) {
+      // A readout must not cost the rebuild; the export runs the same code and reports its own failure.
+      console.error(e);
+    }
+  }
+  refreshMs = performance.now() - t0;
+  renderWarnings();
+}
+
+let refreshMs = 0;
+/** The last refreshPlacementNotices' cost, for scripts/bench-placement-notes.mjs (window.__mosaic). */
+export function lastPlacementRefreshMs(): number {
+  return refreshMs;
+}
+
+export async function exportPrintReady3MF(): Promise<void> {
+  // captured now, not read at track() time: the export button disables during the awaits but #shape-kind doesn't, so state.assembly.kindId can move mid-export
+  const exportedKindId = state.assembly.kindId;
+
+  const built = getLastAssemblyBuild();
+  if (!built || !built.partOutputs.length) return;
+  clearStalePlacementNotices();
+  clearExportStatus();
+  const { materials, parts, notes, plateCount } = exportInputs(built, (msg) => warn(msg));
+  postPlacementNotes(notes);
   const fname = `mosaic-${state.assembly.kindId}.3mf`;
 
   // the color list posts this live; re-run against the export's own material count, the authoritative one
@@ -273,10 +336,10 @@ export async function exportPrintReady3MF(): Promise<void> {
   await new Promise((r) => setTimeout(r, 10));
   try {
     const printer = getPrinter(state.printerId);
-    const { blob, warnings: placementWarnings } = await build3MFCombined(materials, parts, {
-      printer,
-    });
-    placementWarnings.forEach((msg) => warn(msg));
+    const layout = await build3MFCombined(materials, parts, { printer });
+    const { blob, warnings: placementWarnings } = layout;
+    // A rebuild that landed during the await has stated its own; these describe the one before it.
+    if (getLastAssemblyBuild() === built) postPlacementNotes(layoutNotes(layout));
     track('export', {
       format: '3mf',
       mode: 'assembly',
@@ -326,9 +389,12 @@ export function initExportPanel(): void {
     // Affects geometry only through a kind whose build parameter is bounded by the plate (the
     // hubcap diameter) — clampBuildParamToPrinter regenerates then and is a no-op otherwise. It's
     // also the one state change needing its own autosave trigger and slot-count redraw, not a rebuild's.
-    void clampBuildParamToPrinter();
-    // Every placement message names a bed, plate size or verified pose, so a printer switch invalidates all of them. They were cleared only by the *next* export, leaving pills naming a 350x320mm plate over a part on a 256mm bed.
+    //
+    // Every placement message names a bed, plate size or verified pose, so all go now and are
+    // re-stated once a clamp's rebuild lands: stated at once, they described the disc about to be
+    // regenerated (a 260mm hubcap "overhangs" the 256mm bed it is being cut down for).
     clearStalePlacementNotices();
+    void clampBuildParamToPrinter().finally(() => whenIdle().then(refreshPlacementNotices));
     // re-posts the slot-budget pill against the new printer's numbers as well as redrawing the line
     refreshSlotCountCapacity();
     renderExportSummary();

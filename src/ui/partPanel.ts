@@ -191,7 +191,7 @@ export function initPartPanel(): void {
       // silently a same-named zone on an unrelated part, so every instance goes back to "every zone" to re-target.
       clearArtworkZoneBindings();
     }
-    // Every placement message names a part, so a kind switch invalidates all of them; they were cleared only by the next export, leaving pills naming the previous part over the new one.
+    // Every placement message names a part, so a kind switch invalidates all of them. The rebuild re-states them; this keeps one cancelled in its debounce from leaving the previous part's.
     clearStalePlacementNotices();
     applyPartKind();
     track('mode_switch', { kind: 'assembly' });

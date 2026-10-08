@@ -14,7 +14,7 @@ import { applyPartKind, initPartPanel, renderBaseColorSwatches } from './ui/part
 import { initFitPanel } from './ui/fitPanel';
 import { initDepthPanel } from './ui/depthPanel';
 import { initArtworkPanel } from './ui/artworkPanel';
-import { initExportPanel } from './ui/exportPanel';
+import { initExportPanel, lastPlacementRefreshMs } from './ui/exportPanel';
 import { initHelpPanel } from './ui/helpPanel';
 import { initFeedbackWidget } from './ui/feedbackWidget';
 import { initOverlay } from './ui/overlay';
@@ -40,6 +40,7 @@ import { WHOLE_CHAIR_ZONE } from './geometry/zones';
       // check-zone-occlusion.mjs reads this rather than hardcoding '*whole', so its identity sweep can't drift from the app's id.
       WHOLE_CHAIR_ZONE: typeof WHOLE_CHAIR_ZONE;
       buildReuse: typeof lastBuildReuse;
+      placementRefreshMs: typeof lastPlacementRefreshMs;
     };
   }
 ).__mosaic = {
@@ -50,6 +51,7 @@ import { WHOLE_CHAIR_ZONE } from './geometry/zones';
   zonePickAtNdc,
   WHOLE_CHAIR_ZONE,
   buildReuse: lastBuildReuse,
+  placementRefreshMs: lastPlacementRefreshMs,
 };
 
 $('#app-version').textContent =

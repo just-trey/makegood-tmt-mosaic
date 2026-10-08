@@ -472,7 +472,16 @@ constant's provenance.
 
 Three things warn on screen rather than being assumed safe: a part that
 overhangs its plate, a part placed past the plate edge, and a plate whose tower
-has no verified position and no free corner.
+has no verified position and no free corner. A fourth is information: a baked
+layout on a bed not in its `verifiedBeds`, one line per export.
+
+**These are stated before Export, not after the download.** `layoutPlates`
+decides every position and note without writing; `build3MFCombined` calls it,
+then writes. The panel runs the same layout after every rebuild and printer
+switch, from the same inputs the export builds (`exportInputs`, exportPanel.ts).
+The notes are build-scoped, so the next rebuild drops them with the build they
+describe. Footprints are cached per body soup, since they never depend on the
+bed.
 
 ## Code layout
 
@@ -622,6 +631,7 @@ numbers become constants in [threemf.ts](../src/export/threemf.ts), wired onto
 | `fixedPos`        | A fixed reference coordinate (`WHEEL_TOP_POS`, `WHEEL_CAP_POS`). Omitted where the reference coordinate isn't portable across beds, so the part centres itself instead (the footrest). |
 | `primeTowerDelta` | Tower position as an offset from the anchor part's final position, not an absolute, so the layout reproduces on every plate size.                                                      |
 | `objectSettings`  | Per-part Bambu overrides in `model_settings.config`. Read the constant, never a copy of its value.                                                                                     |
+| `verifiedBeds`    | Beds (`"<w>x<d>"`) a human checked the layout on. Required on every `PLACEMENT` entry, so a newly added printer gets the "hasn't been checked" note until someone checks it.           |
 
 Brim is off project-wide via `brim_type`, so the footrest carries support only.
 The chair's two handles do override brim (`chairPlacement.ts`), a deliberate

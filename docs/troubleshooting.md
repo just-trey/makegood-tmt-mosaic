@@ -1769,6 +1769,32 @@ open. That is on purpose: a tower printed through a part is worse than one you
 place yourself. The tower size the check assumes is nominal, so check the real
 one in your slicer either way.
 
+## Troubleshooting: "The plate layout for … hasn't been checked on a … bed"
+
+Full text, e.g.: _"The plate layout for all 13 parts hasn't been checked on a
+350 × 320mm bed. Check the parts and prime tower in your slicer before
+printing."_
+
+**What it means.** The part positions and prime tower for this part were
+checked by hand in a slicer, but on other printers' beds. On this one they are
+re-centered from those, and nobody has opened the result. It is a note, not a
+warning: the layout is usually fine, but nothing has confirmed it.
+
+Which beds are checked today:
+
+| Part     | Checked on                      |
+| -------- | ------------------------------- |
+| Wheel    | 256 × 256, 270 × 270, 350 × 320 |
+| Chair    | 256 × 256, 270 × 270            |
+| Footrest | 256 × 256, 270 × 270, 350 × 320 |
+
+**What to do.** Open the file in your slicer and look at each plate before
+printing. Check that no part hangs off the plate and that the prime tower is
+clear of the parts; drag it to an open corner if not.
+
+A maintainer adding a bed to the checked list follows the
+`verify-new-bed-size` skill.
+
 ## Troubleshooting: "Rebuild failed: …"
 
 Full text: _"Rebuild failed: …"_ — followed by whatever error the rebuild

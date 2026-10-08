@@ -19,7 +19,7 @@ vi.mock('../src/geometry/assembly', async (importOriginal) => ({
 }));
 vi.mock('../src/export/threemf', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/export/threemf')>()),
-  build3MFCombined: vi.fn().mockResolvedValue({ blob: new Blob(), warnings: [] }),
+  build3MFCombined: vi.fn().mockResolvedValue({ blob: new Blob(), warnings: [], notices: [] }),
 }));
 vi.mock('../src/export/placement', () => ({
   resolvePlacement: vi.fn(() => ({ verified: true, placement: {} })),
@@ -210,7 +210,7 @@ describe('exportPrintReady3MF — analytics kind', () => {
     buildWithPalette(1);
     vi.mocked(build3MFCombined).mockImplementationOnce(async () => {
       state.assembly.kindId = 'footrest';
-      return { blob: new Blob(), warnings: [] };
+      return { blob: new Blob(), warnings: [], notices: [] };
     });
 
     await exportPrintReady3MF();
@@ -219,6 +219,22 @@ describe('exportPrintReady3MF — analytics kind', () => {
       'export',
       expect.objectContaining({ kind: 'wheel' }),
     );
+  });
+});
+
+describe('exportPrintReady3MF — a rebuild that lands during the export', () => {
+  it('does not post the superseded build’s layout notes over the new one’s', async () => {
+    buildWithPalette(1);
+    const stale =
+      '"Top" is placed ~4mm past the edge of the plate. Reposition it in your slicer before printing.';
+    vi.mocked(build3MFCombined).mockImplementationOnce(async () => {
+      buildWithPalette(2); // the rebuild landed, and stated its own notes
+      return { blob: new Blob(), warnings: [stale], notices: [] };
+    });
+
+    await exportPrintReady3MF();
+
+    expect(WARNINGS.map((w) => w.message)).not.toContain(stale);
   });
 });
 
@@ -360,6 +376,7 @@ describe('the lines under the Export button', () => {
     vi.mocked(build3MFCombined).mockResolvedValueOnce({
       blob: new Blob([new Uint8Array(3.5 * 1024 * 1024)]),
       warnings: [],
+      notices: [],
     });
     state.assembly.kindId = 'wheel';
 

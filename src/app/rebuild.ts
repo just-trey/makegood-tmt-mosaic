@@ -56,7 +56,12 @@ import { renderArtworkList } from '../ui/artworkListPanel';
 import { rebuildSettled, scheduleRebuild } from './scheduler';
 import { schedulePersist } from '../state/persist';
 import { $ } from '../ui/dom';
-import { clearExportStatus, renderExportHint, renderExportSummary } from '../ui/exportPanel';
+import {
+  clearExportStatus,
+  refreshPlacementNotices,
+  renderExportHint,
+  renderExportSummary,
+} from '../ui/exportPanel';
 import { RebuildCancelled } from '../cancel';
 import { BuildWorkerCrashed, BuildWorkerFault, runAssemblyBuild } from './buildClient';
 
@@ -146,6 +151,7 @@ export async function rebuildCurrent(): Promise<void> {
   // Here, not beside each setExportReady, so the summary follows every one.
   renderExportSummary();
   renderExportHint();
+  refreshPlacementNotices();
   // Every rebuild is the state settling after an edit — the one choke point nearly every mutation funnels through, cheaper than hooking each setter.
   schedulePersist();
 }
