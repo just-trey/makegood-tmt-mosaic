@@ -16,6 +16,8 @@ Open questions with no obvious answer, where the measurement behind the question
   [scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json).
 - A "fit N slots" input beside or instead of the Auto-merge similarity slider, so the control matches the
   audience's actual question. Measurement: [AUTO_MERGE_LEVELS](../src/geometry/regions.ts).
+  - Asked for on the MakeGood forum (2026-10-15): "I have X slots and these X filament colors. Do your
+    best!" Today they raise Colors, then merge down by hand to 8-9 (two AMS + one HT).
 - A built-in pattern library (removed before release, 2026-10-05) needs good art and a user request
   first. Upload-your-own-SVG plus Fill covers the use case; `tests/fixtures/patterns/` holds the old
   four as fixtures only.
@@ -39,6 +41,17 @@ Open questions with no obvious answer, where the measurement behind the question
   ([public/filaments.json](../public/filaments.json)) instead of to colors derived from the image, so an
   image's regions are filaments the user has and the AMS slot count is settled before export rather than
   after.
+  - Forum ask (2026-10-15): import your whole stash as a CSV or XML of named colors ("Overture Blue,
+    #0505FF"), and let the tool pick from it to fit the slot count.
+- A body color separate from every artwork color. Forum report (2026-10-15): a hubcap with a black
+  outline couldn't get a white body. The outline's color ran the full depth of the part. The ask: the
+  body is one solid color below the pocket depth, whatever color is grouped into Base. Not yet
+  reproduced; start by checking what Base and Body / blank color each control on the hubcap.
+- Better image-to-outline tracing for flat cartoon art. Forum report (2026-10-15): a 1900x1400 Bluey
+  PNG, and a high-res transparent PNG, both traced worse than a hand cleanup in Illustrator. Two users
+  report voids or shading bands between colors from JPEG shading. A separate user got 200+ colors and
+  lost the picture moving the slider. Related open work: the "Colors is the one trace control still
+  fixed" and downscale-calibration sections of [tech-debt.md](tech-debt.md).
 - Center auto-fit on the visible part of a zone, not its whole bbox. With the chair's hidden surface now
   clipped, an auto-fit design on `seat-left` or `seat-right` lands mostly on covered surface: 13,971mm²
   of `seat-left`'s 17,166mm² claim is covered (the bake log's per-zone `dead` figure over the zone's
@@ -107,7 +120,8 @@ Open questions with no obvious answer, where the measurement behind the question
   (2026-08-02): undo/redo over color merges, base assignment, depth and placement; keyboard shortcuts
   (`Ctrl/Cmd+E` to export, at minimum); batch export across variants and printers (Standard/Kit × three
   printer profiles is six manual passes today); a project save/load file so one volunteer can hand a
-  design to another (distinct from session autosave, which recovers _your_ session); and a way to edit
+  design to another (distinct from session autosave, which recovers _your_ session; asked for on the
+  forum 2026-10-15, "in case I need to come back and make changes"); and a way to edit
   the owned-filament palette (`public/filaments.json`) without a code-adjacent JSON edit.
 
 ## Give small salient features a fair share of the traced palette

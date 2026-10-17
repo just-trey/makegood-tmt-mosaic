@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Help now suggests a coloring-book drawing when a color image traces
+  poorly.** Load the black-and-white outline, then paint colors on in your
+  slicer.
 - **A finished export now says what it saved.** A line under the Export button
   names the file, plates, filaments and size, and clears when the design changes.
 
