@@ -837,6 +837,9 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 - Same change: add a short prime-tower stability tip to the "check it in your slicer" notes (rib wall,
   tower brim). A wider tower footprint can close the verified part-to-tower clearance, so the tip must
   not suggest a width change without re-checking.
+- The ℹ thin-depth note ("thinner than the usual 0.20 mm print layer") still posts once per color:
+  Default depth 0.04 on a 3-color hubcap gives three lines (#377 live check). Convention 2 wants one
+  line with a count, as #376 did for specks and clamps.
 - **Closing it**: one copy sweep against the vocabulary table.
 
 ## An outline that crosses itself into equal halves is left out, not split at the crossing
