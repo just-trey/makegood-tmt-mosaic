@@ -68,3 +68,26 @@ export function blendHexes(hexes: string[]): string {
   const b = Math.round(rgbs.reduce((s, c) => s + c.b, 0) / rgbs.length);
   return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
+
+/**
+ * Name of the entry closest to a color, by Lab deltaE, not RGB (which conflates hue with
+ * brightness: Grey over Blue for a saturated cyan). `labs` is the list's Lab values, for a caller
+ * that looks up often against a list that rarely changes.
+ */
+export function nearestName(
+  hex: string,
+  named: readonly { name: string; hex: string }[],
+  labs: readonly Lab[] = named.map((n) => hexToLab(n.hex)),
+): string | undefined {
+  const c = hexToLab(hex);
+  let best: string | undefined,
+    bestD = Infinity;
+  for (let i = 0; i < named.length; i++) {
+    const d = deltaE(c, labs[i]);
+    if (d < bestD) {
+      bestD = d;
+      best = named[i].name;
+    }
+  }
+  return best;
+}

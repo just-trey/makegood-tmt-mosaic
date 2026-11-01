@@ -168,6 +168,8 @@ const CONTEXT_KEY: {
   // Whole entries for the palette's colors, so a field added to one is keyed with it.
   colorSettings: { build: (ctx) => ctx.palette.map((c) => ctx.colorSettings[c.key]) },
   globalDepth: { build: (ctx) => ctx.globalDepth },
+  // Cached warnings quote it, so a filament list that loads after the first build must miss.
+  labels: { build: (ctx) => ctx.labels },
   wasm: { neither: 'one engine per worker, and the cache dies with the worker' },
 };
 

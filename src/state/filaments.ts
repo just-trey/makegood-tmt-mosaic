@@ -1,5 +1,5 @@
 import type { Filament } from '../types';
-import { hexToLab, deltaE, type Lab } from '../color';
+import { hexToLab, nearestName, type Lab } from '../color';
 
 // Fallback palette if public/filaments.json is missing or malformed — kept in sync with it.
 const FALLBACK: Filament[] = [
@@ -72,21 +72,10 @@ export function getFilament(id: string | null): Filament | undefined {
 }
 
 /**
- * Name of the owned filament closest to a color, by Lab deltaE, not RGB (which conflates hue with
- * brightness: Grey over Blue for a saturated cyan). Always returns something — no distance cutoff,
+ * Name of the owned filament closest to a color. Always returns something — no distance cutoff,
  * since no threshold has a measurement behind it. A wrong-looking match is fixed by adding that hue
  * as its own swatch (see Cyan, Magenta).
  */
 export function nearestFilamentName(hex: string): string {
-  const c = hexToLab(hex);
-  let best = filaments[0]?.name || 'Filament',
-    bestD = Infinity;
-  for (let i = 0; i < filaments.length; i++) {
-    const d = deltaE(c, filamentLabs[i]);
-    if (d < bestD) {
-      bestD = d;
-      best = filaments[i].name;
-    }
-  }
-  return best;
+  return nearestName(hex, filaments, filamentLabs) || 'Filament';
 }

@@ -662,7 +662,7 @@ describe('a depth deeper than the chair wall', () => {
   const ZONE = 'left';
   const DEPTH = 20;
 
-  it('is cut at the wall under the design, and each part it was cut short on is named', async () => {
+  it('is cut at the wall under the design, and says so once', async () => {
     clearWarnings();
     const zone = sidecar.zones.find((z) => z.id === ZONE)!;
     const parts: AssemblyPart[] = [];
@@ -682,13 +682,6 @@ describe('a depth deeper than the chair wall', () => {
       const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
       if (!Object.keys(out.inlaySoups).length) continue;
       cut++;
-      const said = messages.find((m) => m.includes(`but "${part.name}" is only`));
-      expect(said, `no wall warning for ${part.name}: ${messages.join(' | ')}`).toBeDefined();
-      const [, wall, cutAt] = said!.match(
-        /is only ([\d.]+) mm thick under it\. It was cut at ([\d.]+) mm/,
-      )!;
-      expect(Number(cutAt)).toBeLessThan(Number(wall));
-      expect(Number(wall)).toBeLessThan(DEPTH);
       // A cut through the wall splits chair-wing-left and chair-wheel-mount-left in two. Not genus:
       // the cut leaves zero-volume slivers on the surface at any depth, 1mm included.
       const after = soupToManifold(wasm, out.bodySoup);
@@ -699,6 +692,12 @@ describe('a depth deeper than the chair wall', () => {
       after.delete();
     }
     expect(cut, `not every part was cut: ${messages.join(' | ')}`).toBe(parts.length);
+    // One line for the four parts, quoting the thinnest wall (2.03mm, chair-handle-left) and the
+    // shallowest cut.
+    expect(messages.filter((m) => m.includes('thin'))).toEqual([
+      'Depth for "#ff0000" was set to 20.00 mm, but 4 parts are as thin as 2.03 mm under it. ' +
+        'It was cut shallower instead, as little as 1.98 mm.',
+    ]);
   }, 240000);
 
   // chair-handle-left thins from 4-5mm a millimetre in to 2.03mm at its chart's edge, which a 1mm

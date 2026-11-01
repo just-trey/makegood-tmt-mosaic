@@ -1229,7 +1229,7 @@ describe('fill mode', () => {
       expect(WARNINGS.some((w) => /more than \d+ tiles/.test(w.message))).toBe(true);
       expect(built.partOutputs[0].inlaySoups[0]).toBeUndefined();
       expect(
-        WARNINGS.some((w) => /too fine to print/.test(w.message)),
+        WARNINGS.some((w) => /under about 0\.4 mm across/.test(w.message)),
         `no speck notice; warnings were ${JSON.stringify(WARNINGS.map((w) => w.message))}`,
       ).toBe(true);
       // And NOT the off-the-part message, whose remedy is to lower Scale. The colour reached the
@@ -1703,7 +1703,7 @@ describe('buildAssemblyGeometry too-deep clamp handling', () => {
         baseInput({ parsed: threeColorSquaresParsed(), globalDepth: 9999 }),
       );
 
-      const tooDeep = WARNINGS.filter((w) => w.message.includes('goes.'));
+      const tooDeep = WARNINGS.filter((w) => w.message.includes('deeper than'));
       expect(tooDeep.map((w) => w.message)).toEqual([
         'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 9999.00 mm, deeper than ' +
           '"test box" goes. They were cut at 9.95 mm instead.',
@@ -1711,28 +1711,56 @@ describe('buildAssemblyGeometry too-deep clamp handling', () => {
     },
   );
 
-  it(
-    'keeps two parts clamping the same color separate, each naming its own part',
-    { timeout: 30000 },
-    async () => {
-      // Unlike the zero-depth message, this one names the part on purpose: maxCutDepth() is a
-      // per-part bound, so two parts stay two facts even when they clamp to the same number.
-      await buildAssemblyGeometry(
-        baseInput({
-          colorSettings: { 'asm:#ff0000': { depth: 9999 } },
-          parts: [boxPart(), boxPart({ id: 2, name: 'second box' })],
-        }),
-      );
+  it('says two parts clamping the same color once, naming both', { timeout: 30000 }, async () => {
+    // Said once per kind, not once per part: the chair reaches nineteen parts. maxCutDepth() is
+    // still a per-part bound, so a part clamped differently is told apart by the "as little as".
+    await buildAssemblyGeometry(
+      baseInput({
+        colorSettings: { 'asm:#ff0000': { depth: 9999 } },
+        parts: [boxPart(), boxPart({ id: 2, name: 'second box' })],
+      }),
+    );
 
-      const tooDeep = WARNINGS.filter((w) => w.message.includes('goes.'));
-      expect(tooDeep.map((w) => w.message)).toEqual([
-        'Depth for "#ff0000" was set to 9999.00 mm, deeper than "test box" goes. It was cut at ' +
-          '9.95 mm instead.',
-        'Depth for "#ff0000" was set to 9999.00 mm, deeper than "second box" goes. It was cut ' +
-          'at 9.95 mm instead.',
-      ]);
-    },
-  );
+    const tooDeep = WARNINGS.filter((w) => w.message.includes('deeper than'));
+    expect(tooDeep.map((w) => w.message)).toEqual([
+      'Depth for "#ff0000" was set to 9999.00 mm, deeper than "test box" and "second box" go. ' +
+        'It was cut at 9.95 mm instead.',
+    ]);
+  });
+
+  it('quotes the shallowest cut when parts clamp to different depths', async () => {
+    await buildAssemblyGeometry(
+      baseInput({
+        colorSettings: { 'asm:#ff0000': { depth: 9999 } },
+        parts: [
+          boxPart(),
+          boxPart({
+            id: 2,
+            name: 'shallow box',
+            positions: Float32Array.from(
+              new THREE.BoxGeometry(40, 5, 40).toNonIndexed().translate(0, 2.5, 0).attributes
+                .position.array as Float32Array,
+            ),
+            boundaryLoops: [
+              [
+                [-20, 5, -20],
+                [20, 5, -20],
+                [20, 5, 20],
+                [-20, 5, 20],
+              ],
+            ],
+            topZ: 5,
+          }),
+        ],
+      }),
+    );
+    expect(WARNINGS.filter((w) => w.message.includes('deeper than')).map((w) => w.message)).toEqual(
+      [
+        'Depth for "#ff0000" was set to 9999.00 mm, deeper than "test box" and "shallow box" go. ' +
+          'It was cut shallower instead, as little as 4.95 mm.',
+      ],
+    );
+  });
 
   it(
     'stays quiet on a cutThrough part, which discards the setting rather than clamping it',
@@ -1746,7 +1774,7 @@ describe('buildAssemblyGeometry too-deep clamp handling', () => {
           colorSettings: { 'asm:#ff0000': { depth: 9999 } },
         }),
       );
-      expect(WARNINGS.filter((w) => w.message.includes('goes.'))).toEqual([]);
+      expect(WARNINGS.filter((w) => w.message.includes('deeper than'))).toEqual([]);
     },
   );
 
@@ -1764,7 +1792,7 @@ describe('buildAssemblyGeometry too-deep clamp handling', () => {
           colorSettings: { 'asm:#ff0000': { depth: 9999 } },
         }),
       );
-      expect(WARNINGS.filter((w) => w.message.includes('goes.'))).toEqual([]);
+      expect(WARNINGS.filter((w) => w.message.includes('deeper than'))).toEqual([]);
       expect(WARNINGS.some((w) => w.message.includes("the part's outer edge"))).toBe(true);
     },
   );
@@ -1787,36 +1815,31 @@ describe('buildAssemblyGeometry too-deep clamp handling', () => {
       // The display half of the same fact, unguarded and therefore always right: it is what the
       // warning has to agree with.
       expect(built.palette.find((p) => p.hex === '#ff0000')?.appliedDepth).toBeCloseTo(9.95, 4);
-      const tooDeep = WARNINGS.filter((w) => w.message.includes('goes.'));
+      const tooDeep = WARNINGS.filter((w) => w.message.includes('deeper than'));
       // Under the copy's own name, not the source's: the two are separate parts to the user (the
       // wheel calls them "Top" and "Bottom" and exports them onto separate plates), so naming the
       // source would send someone to inspect a half the color never reaches.
       expect(tooDeep.map((w) => w.message)).toEqual([
-        'Depth for "#0000ff" was set to 9999.00 mm, deeper than "test box" goes. It was cut at ' +
-          '9.95 mm instead.',
-        'Depth for "#ff0000" was set to 9999.00 mm, deeper than "test box (rotated copy)" goes. ' +
-          'It was cut at 9.95 mm instead.',
+        'Depths for "#0000ff", "#ff0000" were set to 9999.00 mm, deeper than "test box" and ' +
+          '"test box (rotated copy)" go. They were cut at 9.95 mm instead.',
       ]);
     },
   );
 
   it(
-    'caps a source and its rotated copy at one pill each, however many colors clamp',
+    'caps a source and its rotated copy at one pill, however many colors clamp',
     { timeout: 30000 },
     async () => {
-      // Why copies used to be skipped: before the clamps were grouped, a two-half wheel raised one
-      // pill per color per half. Grouping is what bounds that now — three colors on both halves
-      // stay at two pills, not six.
+      // Before the clamps were grouped, a two-half wheel raised one pill per color per half. Now
+      // three colors on both halves are one.
       await buildAssemblyGeometry(
         baseInput({ parsed: threeBandsParsed(), parts: halfFaceWithCopy(), globalDepth: 9999 }),
       );
 
-      const tooDeep = WARNINGS.filter((w) => w.message.includes('goes.'));
+      const tooDeep = WARNINGS.filter((w) => w.message.includes('deeper than'));
       expect(tooDeep.map((w) => w.message)).toEqual([
         'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 9999.00 mm, deeper than ' +
-          '"test box" goes. They were cut at 9.95 mm instead.',
-        'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 9999.00 mm, deeper than ' +
-          '"test box (rotated copy)" goes. They were cut at 9.95 mm instead.',
+          '"test box" and "test box (rotated copy)" go. They were cut at 9.95 mm instead.',
       ]);
     },
   );

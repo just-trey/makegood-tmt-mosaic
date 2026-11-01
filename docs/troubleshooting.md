@@ -84,6 +84,9 @@ then 0.05mm away from the part's edge. The chair's curved zones get the same
 repair as a flat part. If the warning survives, that pocket was skipped, and
 the same source fix as above usually resolves it.
 
+The colour is named the way its row is, the closest filament then its hex
+(`Couldn't cut color Yellow (#f5d020) into "Seat".`).
+
 **How much of the colour you lose depends on the colour.** The warning is raised
 per region, not per colour, and the build carries on with the rest. A colour
 split across two depths keeps the slice that did extrude, so it can come out
@@ -239,15 +242,17 @@ single zone and dropped a color on one piece. See [tech-debt.md](tech-debt.md).
 The message clears itself when you're back somewhere Fill works, but the mode
 doesn't come back with it. Set it again from the row's Sticker/Fill control.
 
-## Troubleshooting: "… has detail on "…" too fine to print"
+## Troubleshooting: "Pieces of … are under about 0.4 mm across, so they weren't cut."
 
-Full text: _"\"…\" has detail on \"…\" too fine to print, so it wasn't cut. A
-recess needs to be about 0.4 mm across to hold a bead."_
+Full text: _"Pieces of \"Blue (#1e5fa8)\" on 6 parts are under about 0.4 mm across,
+so they weren't cut."_ With up to three parts it names them: `… on "Seat" and
+"Back" are under …`
 
-**What it means.** Something in that color on that part is smaller than the
-printer's nozzle. Nothing that small can hold a single bead, so it is dropped
-instead of cut, and this names the color and the part so nothing goes in
-silence. One pill per color and part, however many scraps went.
+**What it means.** Something in that color is smaller than the printer's nozzle.
+Nothing that small can hold a single bead, so it is dropped instead of cut, and
+this names the color so nothing goes in silence. One line per build: every color
+that lost a piece is listed in the color list's order, and the parts are named
+or counted. A color is named as its row is, the closest filament and its hex.
 
 Two things make them. Your design can simply be that fine. Or trimming can leave
 a scrap: a design is trimmed to the part it sits on, to the piece of it a seam
@@ -256,7 +261,8 @@ which, or say how much went or what survived: the fix is the same either way,
 and several trims can each drop something.
 
 **What you get.** Everything else in that color is cut normally. Only the
-scraps go.
+scraps go. The line doesn't say which part lost how much: a color on all eight
+chair zones can drop a hairline on six of them.
 
 **What to do.** Usually nothing. Two cases are worth a look:
 
@@ -1232,11 +1238,12 @@ drops transparency on export.
 
 ## Troubleshooting: "… lands entirely off the part and won't print"
 
-Full text, one color: _"\"#ff0000\" lands entirely off the part and won't
+Full text, one color: _"\"Red (#ff0000)\" lands entirely off the part and won't
 print. Lower Scale or move the design to bring it back."_ Several colors:
-_"4 colors land entirely off the part and won't print: "#101010", "#e07020",
-"#f5d020", "#c1272d". Lower Scale or move the design to bring them back."_
-A merged group is named the way its row is: _"Merged (3)"_.
+_"4 colors land entirely off the part and won't print: "Black (#101010)",
+"Orange (#e07020)", "Yellow (#f5d020)", "Red (#c1272d)". Lower Scale or move
+the design to bring them back."_ A color is named the way its row is, the
+closest filament then its hex. A merged group is _"Merged (3)"_.
 
 Assembly mode only. Artwork is clipped to the part's design face, so a color
 whose shapes all sit outside it cuts nothing anywhere. The usual causes are a
@@ -1258,11 +1265,12 @@ that's hidden once assembled" instead. Lowering Scale won't help there.
 
 ## Troubleshooting: "… only reaches surface that's hidden once assembled"
 
-Full text, one color: _"\"#ff0000\" only reaches surface that's hidden once
-assembled and won't print. Move it off the hatching to bring it back."_
+Full text, one color: _"\"Red (#ff0000)\" only reaches surface that's hidden
+once assembled and won't print. Move it off the hatching to bring it back."_
 Several colors: _"3 colors only reach surface that's hidden once assembled and
-won't print: "#101010", "#e07020", "#f5d020". Move them off the hatching to
-bring them back."_ A merged group is named the way its row is: _"Merged (3)"_.
+won't print: "Black (#101010)", "Orange (#e07020)", "Yellow (#f5d020)". Move
+them off the hatching to bring them back."_ A color is named the way its row
+is, the closest filament then its hex. A merged group is _"Merged (3)"_.
 
 Assembly mode, chair only today. The chair's design zones run under the wheels
 and the cushions, and the app doesn't cut artwork into surface that is covered
@@ -1489,6 +1497,14 @@ for, measured from its design face straight back. It was cut at the deepest the
 part can take, a fraction of a millimetre short of breaking out the back. The
 colour's row shows the same number beside its Depth field ("cut at … ").
 
+**One line per requested depth, however many parts.** Full forms: _"Depth for
+\"Red (#c1272d)\" was set to 60.00 mm, deeper than \"Seat\" and \"Back\" go. They
+were cut at 3.95 mm instead."_ Past three parts it counts them (_"deeper than 5
+parts go"_). When the parts clamp to different depths it quotes the shallowest:
+_"It was cut shallower instead, as little as 2.95 mm."_ The colours named are
+every colour clamped on any of those parts, so a colour can be on only some of
+them. Two requested depths are two lines.
+
 **What to do.** Nothing, if the number was a slip. For a deep pocket, the part is
 the limit; there is nothing to raise it to.
 
@@ -1520,14 +1536,17 @@ both cases are read straight from the code:**
     The warning only fires for the part of a colour cut at the clamped number.
 
 **A rotated copy is a part in its own right here.** The wheel's two halves are
-"Top" and "Bottom", so a colour clamped on only one names that half, and a colour
-on both gets a pill for each. Colours clamped from the same depth setting share
-one pill per half; a colour with its own depth gets its own.
+"Top" and "Bottom", so a colour clamped on only one still names that half, and
+the line names both when both clamp. A colour with its own depth gets its own
+line.
 
 ## Troubleshooting: "… is only … mm thick under it"
 
-Full form: `Depth for "#ff0000" was set to 5.00 mm, but "Hubcap" is only 3.00 mm
-thick under it. It was cut at 2.95 mm instead.`
+Full form: `Depth for "Red (#ff0000)" was set to 5.00 mm, but "Hubcap" is only 3.00 mm
+thick under it. It was cut at 2.95 mm instead.` With several parts it names up to
+three, then counts them, and quotes the thinnest wall and the shallowest cut: `…
+but 10 parts are as thin as 2.03 mm under them. They were cut shallower instead,
+as little as 1.98 mm.`
 
 **What it means.** The part as a whole had room for the depth, but the wall
 under that colour doesn't. Cut as asked, the pocket would break out the back.
@@ -1537,7 +1556,7 @@ reaches the back there. The colour's row in the colour list shows the same
 number ("cut at … ").
 
 - One depth per colour per part. A colour spread over thick and thin spots is
-  cut to the thinnest.
+  cut to the thinnest, and the line says "as thin as" instead of "only".
 - The shipped hubcap is the usual case: 8.12 mm deep at its clips, but a 3 mm
   shell everywhere else.
 - On the chair body the wall is measured along the curved surface, the way the
@@ -1560,8 +1579,8 @@ the thin spot keeps its full depth.
 - **A colour that couldn't be trimmed to the face.** That has its own warning,
   "Clipping color region to the design face failed…".
 
-Grouped like the part-wide warning: one pill per part per pair of numbers,
-naming every colour that shares it.
+Grouped like the part-wide warning: one line per requested depth, naming every
+colour clamped at it and the parts, or a count past three.
 
 ## Troubleshooting: "… zones still blank" warnings (assembly mode)
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   edgeCutThroughNotice,
+  groupClamps,
   regionLabel,
   thinWallWarning,
   tooDeepWarning,
@@ -33,7 +34,12 @@ import { noticeBuild, warnBuild } from '../warnings';
 import { resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
 import { throwIfCancelled } from '../cancel';
-import { cancelledOutlinesWarning, fillCoveredNotice } from './assemblyWarnings';
+import { nearestName } from '../color';
+import {
+  cancelledOutlinesWarning,
+  fillCoveredNotice,
+  unprintableSpeckNotice,
+} from './assemblyWarnings';
 import {
   isCuttable,
   newPartTally,
@@ -170,6 +176,12 @@ export interface AssemblyBuildInput {
    */
   designFaceOverride?: { w: number; h: number } | null;
   generatedFit?: number;
+  /**
+   * The owned filaments, so a warning can say "Yellow (#f5d020)" as the color row does. Read from
+   * live state by the caller, because the build may run in a worker that has none. Absent: a color
+   * is named by its hex alone.
+   */
+  filaments?: readonly { name: string; hex: string }[];
 }
 
 /**
@@ -197,6 +209,7 @@ export async function buildAssemblyGeometry(
     keptApart,
     designFaceOverride,
     generatedFit,
+    filaments,
   } = input;
   if (!artworks.length || artworks.some((a) => !a.parsed)) return null;
 
@@ -267,6 +280,10 @@ export async function buildAssemblyGeometry(
     members: r.members,
     isMerge: r.isMerge,
   }));
+
+  const labels = palette.map((c) =>
+    regionLabel(c.hex, c.isMerge, c.members.length, filaments && nearestName(c.hex, filaments)),
+  );
 
   // Regions each artwork contributes to each palette slot, indexed [color][artwork]. Grouping is
   // decided once from the pooled colors so every artwork agrees which hexes share a slot.
@@ -393,6 +410,7 @@ export async function buildAssemblyGeometry(
     tileVerts,
     colorSettings,
     globalDepth,
+    labels,
     wasm,
   };
   const cross: CrossPartState = { tornPills: new Map(), overlapCheckedZones: new Set() };
@@ -440,6 +458,7 @@ export async function buildAssemblyGeometry(
   const {
     edgeCutColors,
     zeroDepthRaises,
+    specks,
     tooDeepClamps,
     thinWallClamps,
     colorAppliedDepth,
@@ -452,10 +471,19 @@ export async function buildAssemblyGeometry(
   // booleans doesn't make untrue.
   for (const r of zeroDepthRaises.values())
     warnBuild(zeroDepthWarning(r.labels, r.requested, r.raisedTo));
-  for (const c of tooDeepClamps.values())
-    warnBuild(tooDeepWarning(c.labels, c.partName, c.requested, c.cutAt));
-  for (const c of thinWallClamps.values())
-    warnBuild(thinWallWarning(c.labels, c.partName, c.requested, c.cutAt, c.wall!));
+  for (const g of groupClamps(tooDeepClamps.values())) warnBuild(tooDeepWarning(g));
+  for (const g of groupClamps(thinWallClamps.values())) warnBuild(thinWallWarning(g));
+  // Palette order, not the order the parts happened to drop them in.
+  const speckLabels = labels.filter((_, ci) => specks.has(ci));
+  if (speckLabels.length) {
+    const speckIds = new Set([...specks.values()].flatMap((ids) => [...ids]));
+    noticeBuild(
+      unprintableSpeckNotice(
+        speckLabels,
+        parts.filter((p) => speckIds.has(p.id)).map((p) => p.name),
+      ),
+    );
+  }
   // Once: each color the edge rule cut through, by depth (one today, per-part in the model).
   const byEdgeDepth = new Map<number, string[]>();
   for (const [label, depth] of edgeCutColors) {
@@ -469,11 +497,7 @@ export async function buildAssemblyGeometry(
   if (anyPlacements) {
     const labelsOf = (want: (ci: number) => boolean): string[] =>
       palette
-        .map((c, ci) =>
-          landedColors.has(ci) || !want(ci)
-            ? null
-            : regionLabel(c.hex, c.isMerge, c.members.length),
-        )
+        .map((_, ci) => (landedColors.has(ci) || !want(ci) ? null : labels[ci]))
         .filter((l): l is string => l !== null);
     // Two causes, two remedies, so they are never merged into one count. A color the design put
     // only on surface the assembly covers is not off the part and Scale will not bring it back.
@@ -522,12 +546,7 @@ export async function buildAssemblyGeometry(
   // Not gated on landedColors: the boundary clip already counted these as landed, which is true,
   // and is why nothing else would say where they went.
   for (const ci of coveredColors)
-    if (!exposedColors.has(ci))
-      noticeBuild(
-        fillCoveredNotice(
-          regionLabel(palette[ci].hex, palette[ci].isMerge, palette[ci].members.length),
-        ),
-      );
+    if (!exposedColors.has(ci)) noticeBuild(fillCoveredNotice(labels[ci]));
   palette.forEach((c, ci) => {
     const d = colorAppliedDepth.get(ci);
     if (d != null) c.appliedDepth = d;

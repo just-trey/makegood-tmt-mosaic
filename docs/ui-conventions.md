@@ -52,7 +52,9 @@ apply; this is the term list.
    the selected printer (`Printer.unitLabel`).
 2. A warning names something the user can act on, in the user's words. "Couldn't build the cut
    solid for color #0a0a0a on Handle (left)" names an internal step; its user-facing form is
-   about a filament and a part.
+   about a filament and a part. A color is named as its row names it: `Yellow (#f5d020)`, or
+   `Merged (3)` for a merged group. A kind of problem is one line with a count, never one per
+   part.
 3. A warning states one problem and one primary remedy. Alternatives belong in help, not the
    pill. The capacity pill was the worked violation (three remedies across three lines); it now
    names hand-merging alone and the rest live in the help dialog.
@@ -204,17 +206,17 @@ over adjectives). They govern different things:
 The vocabulary table at the top settles which of two ordinary words to use. This one settles
 non-ordinary terms. Both columns are quoted from shipped copy, and every row obeys 36.
 
-| Say                                  | Not                                | Shipping today in           |
-| ------------------------------------ | ---------------------------------- | --------------------------- |
-| reduced to flat colors               | quantized                          | Artwork hint, help dialog   |
-| near-identical copies                | near-identical export artifacts    | help dialog                 |
-| gradients                            | shading ramps                      | help dialog                 |
-| the group's main color               | the dominant member                | help dialog, `colorList.ts` |
-| angled edge                          | chamfered edge                     | help dialog                 |
-| traces the edges                     | traces the result back to outlines | help dialog                 |
-| Rebuilding the part…                 | Rebuilding geometry…               | `scheduler.ts` overlay      |
-| Couldn't cut color <hex> into <part> | Couldn't build the cut solid       | assembly CSG warnings       |
-| no size in millimeters               | no absolute width/height in mm     | SVG auto-fit notices        |
+| Say                                           | Not                                | Shipping today in           |
+| --------------------------------------------- | ---------------------------------- | --------------------------- |
+| reduced to flat colors                        | quantized                          | Artwork hint, help dialog   |
+| near-identical copies                         | near-identical export artifacts    | help dialog                 |
+| gradients                                     | shading ramps                      | help dialog                 |
+| the group's main color                        | the dominant member                | help dialog, `colorList.ts` |
+| angled edge                                   | chamfered edge                     | help dialog                 |
+| traces the edges                              | traces the result back to outlines | help dialog                 |
+| Rebuilding the part…                          | Rebuilding geometry…               | `scheduler.ts` overlay      |
+| Couldn't cut color <name> (<hex>) into <part> | Couldn't build the cut solid       | assembly CSG warnings       |
+| no size in millimeters                        | no absolute width/height in mm     | SVG auto-fit notices        |
 
 `tileable` and `bounding box` came off this table: both are free by the test above, and both
 replacements ran longer (36). Leave them alone.

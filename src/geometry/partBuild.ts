@@ -58,6 +58,7 @@ export async function buildPart(
     maxScalePlacement,
     tileCells,
     tileVerts,
+    labels,
     wasm,
   } = ctx;
   const { Manifold } = wasm;
@@ -207,7 +208,7 @@ export async function buildPart(
                     source,
                     grid,
                     (f) => reportPartProgress((base + f) / partUnits),
-                    `color ${palette[ci].hex} on ${part.name}`,
+                    `color ${labels[ci]} on ${part.name}`,
                   )
                 : null;
               // Those calls can split a fill between its polygons but never inside one.
@@ -275,9 +276,7 @@ export async function buildPart(
         // This color's cutters (different zones, same part) couldn't be merged. Drop just this
         // color rather than losing the whole part's cut.
         landedColors.add(+ci);
-        warnBuild(
-          `Couldn't merge color ${palette[+ci].hex} on "${part.name}". It won't print there.`,
-        );
+        warnBuild(`Couldn't merge color ${labels[+ci]} on "${part.name}". It won't print there.`);
         continue;
       }
       if (merged !== list[0]) held.add(merged);
@@ -394,7 +393,7 @@ export async function buildPart(
         // the color and say the recess ships empty, so the warning is actionable.
         landedColors.add(ci);
         warnBuild(
-          `Couldn't fit the inlay for color ${palette[ci].hex} on "${part.name}". Its pocket ` +
+          `Couldn't fit the inlay for color ${labels[ci]} on "${part.name}". Its pocket ` +
             `is cut into the body but will print as an empty recess.`,
         );
       } finally {

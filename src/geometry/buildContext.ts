@@ -22,6 +22,8 @@ export interface BuildContext {
   tileVerts: number[];
   colorSettings: ColorSettings;
   globalDepth: number;
+  /** How a warning names each palette color (regionLabel), indexed like `palette`. */
+  labels: string[];
   wasm: ManifoldAPI;
 }
 
@@ -57,6 +59,11 @@ export interface PartTally {
   edgeCutColors: Map<string, number>;
   /** Zero-depth raises, build-wide: the message names no part, and is said once. */
   zeroDepthRaises: Map<string, ZeroDepthRaise>;
+  /**
+   * Colors that left a speck too small to print, with the parts it happened on. Said once at the
+   * end of the build: a line per color and part was eight lines for one plain design on the chair.
+   */
+  specks: Map<number, Set<number>>;
   /** A part's maxCutDepth() clamp (addPartTooDeepClamp), keyed per part since the bound is. */
   tooDeepClamps: Map<string, PartDepthClamp>;
   /** A thinner wall under the region: "deeper than the part goes" is false of that pocket. */
@@ -102,6 +109,7 @@ export interface ClampStage {
 export interface PartFacts {
   edgeCutColors: { set(label: string, depth: number): void };
   zeroDepthRaises: { add(label: string, requested: number, raisedTo: number): void };
+  specks: { add(ci: number, partId: number): void };
   tooDeepClamps: ClampStage;
   thinWallClamps: ClampStage;
   /** Keeps the shallowest depth cut per color (PartTally.colorAppliedDepth). */
@@ -119,6 +127,7 @@ export function partFacts(t: PartTally): PartFacts {
   return {
     edgeCutColors: t.edgeCutColors,
     zeroDepthRaises: { add: (...args) => addZeroDepthRaise(t.zeroDepthRaises, ...args) },
+    specks: { add: (ci, partId) => addSpeck(t.specks, ci, partId) },
     tooDeepClamps: clamps(t.tooDeepClamps),
     thinWallClamps: clamps(t.thinWallClamps),
     colorAppliedDepth: { fold: (ci, d) => foldMin(t.colorAppliedDepth, ci, d) },
@@ -127,6 +136,12 @@ export function partFacts(t: PartTally): PartFacts {
     coveredColors: t.coveredColors,
     exposedColors: t.exposedColors,
   };
+}
+
+function addSpeck(into: Map<number, Set<number>>, ci: number, partId: number): void {
+  const at = into.get(ci);
+  if (at) at.add(partId);
+  else into.set(ci, new Set([partId]));
 }
 
 function foldMin(into: Map<number, number>, ci: number, d: number): void {
@@ -141,6 +156,7 @@ export function newPartTally(): PartTally {
   return {
     edgeCutColors: new Map(),
     zeroDepthRaises: new Map(),
+    specks: new Map(),
     tooDeepClamps: new Map(),
     thinWallClamps: new Map(),
     colorAppliedDepth: new Map(),
@@ -163,6 +179,7 @@ export function mergePartTally(into: PartTally, from: PartTally): void {
     if (!at) into.zeroDepthRaises.set(key, { ...e, labels: [...e.labels] });
     else for (const l of e.labels) if (!at.labels.includes(l)) at.labels.push(l);
   }
+  for (const [ci, ids] of from.specks) for (const id of ids) addSpeck(into.specks, ci, id);
   for (const k of ['tooDeepClamps', 'thinWallClamps'] as const)
     for (const [key, e] of from[k]) {
       const at = into[k].get(key);

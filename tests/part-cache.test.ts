@@ -182,8 +182,7 @@ describe('a part replayed from the cache', () => {
     // The scene has to exercise each thing a replay owes, or this proves nothing.
     const said = fresh.warnings.map((w) => w.message).join('\n');
     expect(said).toMatch(/Two placements of "square" overlap/);
-    expect(said).toMatch(/deeper than "A" goes/);
-    expect(said).toMatch(/deeper than "B" goes/);
+    expect(said).toMatch(/deeper than "A" and "B" go\./);
     expect(said).toMatch(/Depth for "#0000ff" was set to 0\.00 mm/);
     expect(cached.warnings).toEqual(fresh.warnings);
     expect(cached.journal).toEqual(fresh.journal);
@@ -442,6 +441,7 @@ describe('the key', () => {
     tileVerts: [4, 4],
     colorSettings: {},
     globalDepth: 1,
+    labels: ['#ff0000'],
     wasm: null as never,
   });
   const part = boxPart(1, 'A', 10);

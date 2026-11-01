@@ -55,6 +55,7 @@ import { renderWarnings } from '../ui/warningsView';
 import { renderArtworkList } from '../ui/artworkListPanel';
 import { rebuildSettled, scheduleRebuild } from './scheduler';
 import { schedulePersist } from '../state/persist';
+import { getFilaments } from '../state/filaments';
 import { $ } from '../ui/dom';
 import {
   clearExportStatus,
@@ -580,6 +581,7 @@ async function rebuildAssemblyScene(): Promise<void> {
       keptApart: state.keptApart,
       designFaceOverride: generatedDesignFaceOverride(),
       generatedFit: generatedFitFactor(),
+      filaments: getFilaments(),
     });
   } catch (e) {
     // Whatever went wrong, the last result is still on screen and no longer matches the panels.
