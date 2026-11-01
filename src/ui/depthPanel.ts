@@ -18,8 +18,49 @@ export function refreshDepthControls(): void {
  */
 let namedOverrides: string[] = [];
 
-export function refreshDepthOverrides(overriddenKeys: string[]): void {
+/** A depth the build used in place of a row's value: cut (reported by the build) or raised. */
+export interface DepthNote {
+  depth: number;
+  cut: boolean;
+}
+
+/**
+ * The rows following Default depth, and the notes among them. One shared value names it; mixed, a
+ * count points at the rows, which each say their own.
+ */
+export interface DefaultDepthNotes {
+  total: number;
+  notes: DepthNote[];
+}
+
+function defaultDepthNote({ total, notes }: DefaultDepthNotes): string {
+  if (!notes.length) return '';
+  const [first] = notes;
+  const shared = notes.every(
+    (n) => n.cut === first.cut && n.depth.toFixed(2) === first.depth.toFixed(2),
+  );
+  if (notes.length === total && shared) {
+    const one = total === 1;
+    const verb = first.cut ? (one ? 'cuts' : 'cut') : `${one ? 'is' : 'are'} raised to`;
+    return `${one ? 'The color' : 'Colors'} using it ${verb} ${first.depth.toFixed(2)} mm`;
+  }
+  const one = notes.length === 1;
+  // A raise on a cut-through part is no cut (see depthNote in colorList.ts), so "cut" only when all are.
+  const allCut = notes.every((n) => n.cut);
+  const verb = allCut ? (one ? 'cuts' : 'cut') : one ? 'changes to' : 'change to';
+  return `${notes.length} of ${total} colors using it ${verb} another depth, shown on ${one ? 'its row' : 'their rows'}`;
+}
+
+export function refreshDepthOverrides(
+  overriddenKeys: string[],
+  following: DefaultDepthNotes = { total: 0, notes: [] },
+): void {
   namedOverrides = overriddenKeys.slice();
+  const note = document.querySelector<HTMLElement>('#depth-default-note');
+  if (note) {
+    note.textContent = defaultDepthNote(following);
+    note.hidden = !note.textContent;
+  }
   const box = document.querySelector<HTMLElement>('#depth-overrides');
   if (!box) return;
   const n = overriddenKeys.length;

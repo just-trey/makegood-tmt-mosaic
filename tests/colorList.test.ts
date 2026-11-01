@@ -598,8 +598,8 @@ describe('a depth the build will raise', () => {
     // "raised to", not "cut at": a cut-through part discards the setting, so naming a cut
     // depth here would be false on the wheel's own cap.
     const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
-    expect(hints.join(' ')).toContain('raised to 0.20');
-    expect(hints.join(' ')).not.toContain('cut at');
+    expect(hints.join(' ')).toContain('raised to 0.20 mm');
+    expect(hints.join(' ')).not.toContain('cuts');
   });
 
   it('says nothing extra for a depth the build will use as asked', () => {
@@ -646,7 +646,7 @@ describe('a depth the build clamped to the part', () => {
     expect(input.value, 'the field still shows what was typed').toBe('9999.00');
     // "cut at", not "raised to": this clamp really did land on a printed depth.
     const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
-    expect(hints.join(' ')).toContain('cut at 9.95');
+    expect(hints.join(' ')).toContain('cuts 9.95 mm');
     expect(hints.join(' ')).not.toContain('raised to');
   });
 
@@ -705,7 +705,110 @@ describe('a depth the build clamped to the part', () => {
     ]);
 
     const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
-    expect(hints.join(' ')).toContain('raised to 0.20');
-    expect(hints.join(' ')).not.toContain('cut at');
+    expect(hints).toEqual(['mm', 'cuts 0.20 mm']);
+  });
+});
+
+/**
+ * The row and Default depth both say the depth the build used, in the words a slicer user would:
+ * "cuts 2.95 mm". The field keeps the typed value (#279), so the note is the only place it shows.
+ */
+describe('depth notes say what is cut', () => {
+  beforeEach(() => {
+    document.body.innerHTML =
+      '<input id="p-depth"><div id="depth-default-note" hidden></div>' +
+      '<div id="depth-overrides" hidden></div>' +
+      '<div id="color-list"></div><div id="slot-count"></div><div id="stat-colors"></div>';
+    state.colorSettings = {};
+  });
+  const rowHints = (): string[] =>
+    [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent ?? '');
+  const defaultNote = (): HTMLElement =>
+    document.querySelector<HTMLElement>('#depth-default-note')!;
+
+  it('names the cut depth for 50 on the hubcap', () => {
+    state.globalDepth = 50;
+    renderColorList([entry('#ff0000', { appliedDepth: 2.95 })]);
+
+    expect(document.querySelector<HTMLInputElement>('.depth-input')!.value).toBe('50.00');
+    expect(rowHints()).toEqual(['mm', 'cuts 2.95 mm']);
+  });
+
+  it('raises 0.001 and 0.03 like 0, and keeps 0.04', () => {
+    state.globalDepth = 1;
+    state.colorSettings = { a: { depth: 0.001 }, b: { depth: 0.03 }, c: { depth: 0.04 } };
+    renderColorList([
+      entry('#ff0000', { key: 'a', appliedDepth: 0.2 }),
+      entry('#00ff00', { key: 'b', appliedDepth: 0.2 }),
+      entry('#0000ff', { key: 'c', appliedDepth: 0.04 }),
+    ]);
+
+    const rows = [...document.querySelectorAll('.depth-row')].map((r) =>
+      [...r.querySelectorAll('.hint')].map((n) => n.textContent).join(' '),
+    );
+    expect(rows[0]).toContain('cuts 0.20 mm');
+    expect(rows[1]).toContain('cuts 0.20 mm');
+    expect(rows[2]).not.toContain('cuts');
+  });
+
+  it('never shows a positive depth as 0.00', () => {
+    state.globalDepth = 1;
+    state.colorSettings = { a: { depth: 0.001 }, b: { depth: 0.004 } };
+    renderColorList([entry('#ff0000', { key: 'a' }), entry('#00ff00', { key: 'b' })]);
+
+    const values = [...document.querySelectorAll<HTMLInputElement>('.depth-input')].map(
+      (i) => i.value,
+    );
+    expect(values).toEqual(['0.001', '0.004']);
+  });
+
+  it('says under Default depth what 0 cuts when every color uses it', () => {
+    state.globalDepth = 0;
+    renderColorList([
+      entry('#ff0000', { appliedDepth: 0.2 }),
+      entry('#00ff00', { appliedDepth: 0.2 }),
+    ]);
+
+    expect(defaultNote().hidden).toBe(false);
+    expect(defaultNote().textContent).toBe('Colors using it cut 0.20 mm');
+  });
+
+  it('says it before any build has reported, as the raise', () => {
+    state.globalDepth = 0;
+    renderColorList([entry('#ff0000')]);
+
+    expect(defaultNote().textContent).toBe('The color using it is raised to 0.20 mm');
+  });
+
+  it('gives a count when only some colors using it cut another depth', () => {
+    state.globalDepth = 5;
+    renderColorList([
+      entry('#ff0000', { appliedDepth: 2.95 }),
+      entry('#00ff00', { appliedDepth: 5 }),
+      entry('#0000ff'),
+    ]);
+
+    expect(defaultNote().textContent).toBe(
+      '1 of 3 colors using it cuts another depth, shown on its row',
+    );
+  });
+
+  it('never calls a raise on a cut-through part a cut in the count', () => {
+    // The wheel at 0.02: the cap holes through (no appliedDepth), the face cuts 0.20.
+    state.globalDepth = 0.02;
+    renderColorList([entry('#ff0000'), entry('#00ff00', { appliedDepth: 0.2 })]);
+
+    expect(defaultNote().textContent).toBe(
+      '2 of 2 colors using it change to another depth, shown on their rows',
+    );
+  });
+
+  it('ignores rows with their own depth, and hides when nothing differs', () => {
+    state.globalDepth = 2;
+    state.colorSettings = { '#ff0000': { depth: 0 } };
+    renderColorList([entry('#ff0000', { appliedDepth: 0.2 }), entry('#00ff00')]);
+
+    expect(defaultNote().hidden).toBe(true);
+    expect(defaultNote().textContent).toBe('');
   });
 });

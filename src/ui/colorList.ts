@@ -1,11 +1,18 @@
 import { addToBase, baseColorHex, removeFromBase, state } from '../state/store';
-import { MIN_CUT_DEPTH_MM, depthDiffers, requestedDepth } from '../geometry/depth';
+import {
+  MIN_CUT_DEPTH_MM,
+  depthDiffers,
+  formatDepth,
+  raisesDepth,
+  requestedDepth,
+} from '../geometry/depth';
 import { scheduleRebuild } from '../app/scheduler';
 import { nearestFilamentName } from '../state/filaments';
 import { getPrinter } from '../export/printers';
 import { refreshSlotBudgetNotice, slotTier } from './slotBudget';
 import { $, $all } from './dom';
-import { refreshDepthOverrides } from './depthPanel';
+import { toFiniteNumber } from '../util/number';
+import { refreshDepthOverrides, type DepthNote } from './depthPanel';
 
 export interface ColorListEntry {
   color: string;
@@ -239,6 +246,18 @@ function wireDepthReset(list: HTMLElement): void {
   });
 }
 
+/**
+ * What a row's depth note says, or null when the build uses the field's value. The build reports a
+ * cut on `appliedDepth`; without one, a raise is said as the setting ("raised to"), never as a cut:
+ * a cut-through part like the wheel's cap holds no recess, and zeroDepthWarning says the same.
+ * Compared at printed precision like depthDiffers, so 3.951 -> 3.95 stays quiet.
+ */
+function depthNote(c: ColorListEntry, shown: number): DepthNote | null {
+  if (c.appliedDepth != null && depthDiffers(c.appliedDepth, shown))
+    return { depth: c.appliedDepth, cut: true };
+  return raisesDepth(shown) ? { depth: MIN_CUT_DEPTH_MM, cut: false } : null;
+}
+
 export function renderColorList(
   colorMeshes: ColorListEntry[] | null,
   opts: { rawColorCount?: number } = {},
@@ -282,22 +301,7 @@ export function renderColorList(
     // quiet and kept cutting the wrong depth, and lowering the global Depth field (the warning's own
     // fix) no longer reached rows carrying an explicit override. colorSettings holds deliberate overrides only.
     const shownDepth = requestedDepth(state.colorSettings, state.globalDepth, c.key);
-    // A depth of zero or less cuts nothing, so the build raises it; the field kept reading 0.00
-    // while 0.20 was in use, the warning the only place that number appeared. Said beside the field,
-    // not written into it (see above).
-    //
-    // "raised to", never "cut at": what a part does with a setting is the mapper's business (the
-    // wheel's cap cuts through at a fixed 3mm, an edge region at full thickness), so a cut depth
-    // would be false on both. zeroDepthWarning describes the setting for the same reason.
-    const raisedFromZero = shownDepth <= 0;
-    // The other clamp: a depth deeper than the part goes is cut short, and the build reports what it
-    // cut on `appliedDepth`. Compared at printed precision like the warning's depthDiffers, so a
-    // sub-2dp move (3.951 -> 3.95) stays quiet. "cut at", not "raised to": this one did land on a printed depth.
-    const tooDeepClamped =
-      !raisedFromZero &&
-      c.appliedDepth != null &&
-      c.appliedDepth < shownDepth &&
-      depthDiffers(c.appliedDepth, shownDepth);
+    const note = depthNote(c, shownDepth);
     // A row with its own depth looked identical to one following the global, so the global Depth field appearing not to work had no visible cause or undo (clearing the field was the way back, documented only in help).
     const isOverridden = Number.isFinite(state.colorSettings[c.key]?.depth);
 
@@ -344,19 +348,18 @@ export function renderColorList(
       ${membersRowHtml}
       <div class="depth-row">
         <label>depth</label>
-        <input type="number" class="depth-input${isOverridden ? ' overridden' : ''}" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${labelHtml}" title="${
+        <input type="number" class="depth-input${isOverridden ? ' overridden' : ''}" step="0.05" value="${formatDepth(shownDepth)}" aria-label="Depth for ${labelHtml}" title="${
           isOverridden
-            ? `Using its own depth (${shownDepth.toFixed(2)} mm) instead of the ${state.globalDepth.toFixed(2)} mm default`
+            ? `Using its own depth (${formatDepth(shownDepth)} mm) instead of the ${formatDepth(state.globalDepth)} mm default`
             : 'Following the default depth. Type here to give this row its own'
         }">
         <span class="hint">mm</span>
         ${
           isOverridden
-            ? `<button type="button" class="btn small depth-reset" data-reset-key="${c.key}" title="Reset to the default depth (${state.globalDepth.toFixed(2)} mm)" aria-label="Reset depth for ${labelHtml} to the default">↺</button>`
+            ? `<button type="button" class="btn small depth-reset" data-reset-key="${c.key}" title="Reset to the default depth (${formatDepth(state.globalDepth)} mm)" aria-label="Reset depth for ${labelHtml} to the default">↺</button>`
             : ''
         }
-        ${raisedFromZero ? `<span class="hint">raised to ${MIN_CUT_DEPTH_MM.toFixed(2)}</span>` : ''}
-        ${tooDeepClamped ? `<span class="hint">cut at ${c.appliedDepth!.toFixed(2)}</span>` : ''}
+        ${note ? `<span class="hint">${note.cut ? 'cuts' : 'raised to'} ${note.depth.toFixed(2)} mm</span>` : ''}
         <span class="preset">≈ ${nearestFilamentName(c.color)}</span>
       </div>
       ${mergeSelectHtml ? `<div class="merge-row">${mergeSelectHtml}</div>` : ''}`;
@@ -387,8 +390,8 @@ export function renderColorList(
         field.removeAttribute('data-abandoned');
         return;
       }
-      const typed = parseFloat(field.value);
-      if (Number.isFinite(typed)) state.colorSettings[c.key] = { depth: typed };
+      const typed = toFiniteNumber(field.value);
+      if (typed != null) state.colorSettings[c.key] = { depth: typed };
       else delete state.colorSettings[c.key];
       scheduleRebuild();
     });
@@ -449,8 +452,15 @@ export function renderColorList(
   lastRawColorCount = opts.rawColorCount ?? cutColors;
   renderSlotCount();
   // Reported from the rows on screen, so the Depth panel can only name overrides the user can see and clear.
+  const followers = rows.filter((c) => !Number.isFinite(state.colorSettings[c.key]?.depth));
   refreshDepthOverrides(
     rows.filter((c) => Number.isFinite(state.colorSettings[c.key]?.depth)).map((c) => c.key),
+    {
+      total: followers.length,
+      notes: followers
+        .map((c) => depthNote(c, state.globalDepth))
+        .filter((n): n is DepthNote => n != null),
+    },
   );
   $('#stat-colors').textContent = `${cutColors} color${cutColors === 1 ? '' : 's'}`;
   $('#stat-colors').style.display = '';

@@ -13,6 +13,7 @@ import {
   CLIP_REMNANT_FLOOR_MM2,
   depthDiffers,
   MIN_CUT_DEPTH_MM,
+  raisesDepth,
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
@@ -213,10 +214,11 @@ export async function buildColorPrism(
   }
   exposedColors.add(ci);
   const requested = requestedDepth(colorSettings, globalDepth, c.key);
-  // A depth at or below zero cuts nothing and used to drop the color and its depth field
-  // silently; raised so it stays fixable. The message names the *setting*, not the cut (a cut
-  // depth claimed 0.02 mm on a 3 mm through-cut), and no part, so a wheel says it once.
-  const raised = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
+  // A depth under one fine layer prints nothing (at or below zero it used to drop the color and
+  // its depth field silently); raised so it stays fixable. The message names the *setting*, not
+  // the cut (a cut depth claimed 0.02 mm on a 3 mm through-cut), and no part, so a wheel says it once.
+  const raises = raisesDepth(requested);
+  const raised = raises ? MIN_CUT_DEPTH_MM : requested;
   // Bounded by how far the part extends behind its face (unbounded, 20 mm and 9999 mm both
   // exported unwarned on the wheel); resolveCutRegions also bounds each region by its wall.
   const depthSetting = Math.min(raised, mapper.maxCutDepth());
@@ -243,7 +245,7 @@ export async function buildColorPrism(
     colorAppliedDepth.fold(ci, cut);
   }
   for (const r of wallCuts) thinWallClamps.add(label, part.name, raised, r.depth, r.wall);
-  if (requested <= 0) zeroDepthRaises.add(label, requested, depthSetting);
+  if (raises) zeroDepthRaises.add(label, requested, depthSetting);
   // Gated on what the mapper did, like the sub-layer note: a cutThrough part holes the whole
   // way, so "cut at 24.25 mm instead" would be false. Never test `part.cutThrough` here.
   // Rotated copies report too: same bound (asmAddDuplicate shares mesh, face, topZ) but a

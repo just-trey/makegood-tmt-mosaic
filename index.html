@@ -232,8 +232,9 @@
               override, and a row's own "↺" clears just that one.
             </p>
             <p>
-              A depth of 0 cuts nothing, so it is raised to 0.2&nbsp;mm. Anything below 0.2&nbsp;mm
-              still cuts as asked, but needs a layer height finer than the usual 0.2&nbsp;mm.
+              A depth under 0.04&nbsp;mm is too shallow to print, so it is raised to 0.2&nbsp;mm. Up
+              to 0.2&nbsp;mm it cuts as asked, but needs a layer height finer than the usual
+              0.2&nbsp;mm.
             </p>
             <p>
               A depth deeper than the material under a color is cut as deep as it can go. The app
@@ -568,6 +569,7 @@
             </div>
             <span class="hint">mm</span>
           </div>
+          <div class="hint" id="depth-default-note" hidden></div>
           <div class="depth-overrides" id="depth-overrides" hidden></div>
           <div class="hint">
             Measured down from the top face. Individual colors can override it.

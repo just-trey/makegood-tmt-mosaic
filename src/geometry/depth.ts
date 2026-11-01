@@ -2,13 +2,31 @@ import type { ColorSettings } from '../types';
 
 /**
  * One typical layer, the default profile on every printer this targets. Two uses:
- * - The fallback for a request of zero or less, which must print: a 0.02 mm fallback (a boolean
- *   tolerance) sliced to nothing yet cost an AMS slot.
+ * - The fallback for a request under MIN_HONORED_DEPTH_MM, which must print: a 0.02 mm fallback (a
+ *   boolean tolerance) sliced to nothing yet cost an AMS slot.
  * - The threshold below which a recess *may* not print: a quiet note, not a clamp. Someone on a
  *   0.08 mm profile can cut a 0.12 mm recess, which clamping to 0.2 mm would forbid
  *   (docs/audience.md).
  */
 export const MIN_CUT_DEPTH_MM = 0.2;
+
+/** One fine layer: Bambu Studio's min_layer_height for a 0.2 mm nozzle (BBL machine profiles). */
+export const MIN_HONORED_DEPTH_MM = 0.04;
+
+/**
+ * Whether a requested depth is raised to MIN_CUT_DEPTH_MM: under one fine layer it prints on no
+ * profile yet still costs a slot. Read at printed precision, so a 0.038 that reads "0.04" in its
+ * field is honored rather than raised under a warning quoting "under 0.04 mm".
+ */
+export function raisesDepth(requested: number): boolean {
+  return Number(requested.toFixed(2)) < MIN_HONORED_DEPTH_MM;
+}
+
+/** A depth as the field and messages print it: 2dp, except a nonzero 0.001 shown as "0.00". */
+export function formatDepth(depth: number): string {
+  const fixed = depth.toFixed(2);
+  return depth !== 0 && Number(fixed) === 0 ? String(Number(depth.toPrecision(2))) : fixed;
+}
 
 /**
  * Nozzle width in mm: what a printer can lay down at all. Here, not in raster/stats.ts, because
@@ -84,8 +102,8 @@ export function zeroDepthWarning(labels: string[], requested: number, raisedTo: 
   const which = labels.map((l) => `"${l}"`).join(', ');
   return (
     `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ` +
-    `${requested.toFixed(2)} mm, which is not a depth that can cut. ` +
-    `${one ? 'It was' : 'They were'} raised to ${raisedTo.toFixed(2)} mm.`
+    `${formatDepth(requested)} mm. Under ${MIN_HONORED_DEPTH_MM.toFixed(2)} mm is too shallow ` +
+    `to print, so ${one ? 'it was' : 'they were'} raised to ${raisedTo.toFixed(2)} mm.`
   );
 }
 
@@ -107,7 +125,7 @@ export function addZeroDepthRaise(
   requested: number,
   raisedTo: number,
 ): void {
-  const key = `${requested.toFixed(2)}|${raisedTo.toFixed(2)}`;
+  const key = `${formatDepth(requested)}|${raisedTo.toFixed(2)}`;
   const at = into.get(key);
   if (!at) into.set(key, { requested, raisedTo, labels: [label] });
   else if (!at.labels.includes(label)) at.labels.push(label);
@@ -238,8 +256,8 @@ export function subLayerDepth(depth: number): boolean {
  * (UX review 2026-08-03).** The icon tracks "did the app change your number?": zero is raised and
  * too-deep clamped, so both warn; a positive sub-layer depth is honored (a 0.12 mm recess on a
  * 0.08 mm profile is a real choice, docs/audience.md), and warning on obeyed values erodes the real
- * `⚠`s. Would change on evidence of accidents like 0.02 typed for 0.2 — then flag that 10x case,
- * not bump severity.
+ * `⚠`s. Owner decision (batch F, 2026-11): under one fine layer (raisesDepth) is raised and warned
+ * like 0; 0.04-0.19 stays honored with this note.
  */
 export function thinDepthNotice(label: string, depth: number): string {
   return (
