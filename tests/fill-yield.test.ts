@@ -232,7 +232,33 @@ describe('a Fill under a Sticker', () => {
         [box(40), box(62)],
       ),
     );
-    expect(messages()).toEqual([unprintableSpeckNotice('#ff0000', 'box 62')]);
+    expect(messages()).toEqual([unprintableSpeckNotice(['#ff0000'], ['box 62'])]);
+  }, 60000);
+
+  it('says it once for every color and part a sliver is all that is left of', async () => {
+    clearWarnings();
+    // Two bars per tile, one color each, both 6mm across: each crosses the 62mm box's edge where
+    // the sticker stops 0.02mm short, so each color leaves a sliver on each of the two parts.
+    const bars: ParsedSVG = {
+      shapes: [
+        { fill: '#ff0000', loops: rect(2, 1, 8, 4), order: 0 },
+        { fill: '#00aa00', loops: rect(2, 6, 8, 9), order: 1 },
+      ],
+      bbox: { minX: 2, minY: 1, maxX: 8, maxY: 9 },
+      rawSVGCircle: null,
+      userUnitMM: 1,
+      viewBox: { w: 10, h: 10 },
+    };
+    await buildAssemblyGeometry(
+      input(
+        [art(bars, 'fill'), art(blueSticker(-30.98, -30.98, 30.98, 30.98), 'sticker')],
+        [box(62, { name: 'left' }), box(62, { name: 'right' })],
+      ),
+    );
+    const said = messages();
+    expect(said).toHaveLength(1);
+    // Palette order, which is the color list's, not the order the parts dropped them in.
+    expect(said[0]).toBe(unprintableSpeckNotice(['#00aa00', '#ff0000'], ['left', 'right']));
   }, 60000);
 
   it('keeps the fill and names the color when cutting it back fails', async () => {

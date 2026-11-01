@@ -6,16 +6,13 @@ import {
   netShareFailedWarning,
   netShareNotice,
   raiseTornWarning,
-  speckKey,
-  unprintableSpeckNotice,
 } from './assemblyWarnings';
-import type { BuildContext, BuildTally, ColorMark } from './buildContext';
+import type { BuildContext, BuildTally, ColorMark, PartFacts } from './buildContext';
 import { FILL_REFINE_MM } from './conformal';
 import {
   CLIP_REMNANT_FLOOR_MM2,
   depthDiffers,
   MIN_CUT_DEPTH_MM,
-  regionLabel,
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
@@ -84,23 +81,20 @@ function noteHiddenSurface(
 }
 
 /**
- * Drop specks too small to print, notice once per colour and part across all three clips, and
- * mark the colour landed — together, so no colour gets both the speck notice and "lands entirely
- * off the part" (whose lower-Scale remedy is backwards for a design already too small).
+ * Drop specks too small to print, tally the colour and part for the one notice at the end of the
+ * build, and mark the colour landed — together, so no colour gets both the speck notice and "lands
+ * entirely off the part" (whose lower-Scale remedy is backwards for a design already too small).
  */
 function dropSpecks(
   landedColors: ColorMark,
+  specks: PartFacts['specks'],
   feat: PolyFeature | null,
   ci: number,
   part: AssemblyPart,
-  c: { hex: string; isMerge: boolean; members: unknown[] },
 ): PolyFeature | null {
   const r = dropUnprintableRemnants(feat, CLIP_REMNANT_FLOOR_MM2);
   if (!r.dropped) return r.feat;
-  noticeBuild(
-    unprintableSpeckNotice(regionLabel(c.hex, c.isMerge, c.members.length), part.name),
-    speckKey(ci, part.id),
-  );
+  specks.add(ci, part.id);
   // The color DID reach this face; what it left could not print.
   landedColors.add(ci);
   return r.feat;
@@ -118,10 +112,11 @@ export async function buildColorPrism(
   onZone: DesignOnZone,
   ci: number,
 ): Promise<void> {
-  const { artworks, featuresByColor, colorSettings, globalDepth, wasm } = ctx;
+  const { artworks, featuresByColor, colorSettings, globalDepth, labels, wasm } = ctx;
   const {
     tornPills,
     zeroDepthRaises,
+    specks,
     tooDeepClamps,
     thinWallClamps,
     colorAppliedDepth,
@@ -146,7 +141,7 @@ export async function buildColorPrism(
     // needed. A pre-tiling skip would save a fill's union pass but attributed off the UNTILED
     // source; restore it only for a bake that fails tests/chair-zones.test.ts ("no shipped
     // chart is hidden outright").
-    const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
+    const r = safeIntersectChecked(feat, boundaryPoly, `color ${labels[ci]} on ${part.name}`);
     feat = r.feat;
     clipped = r.clipped;
     // Before the speck floor: a clip returning nothing is hidden surface, with its own
@@ -157,7 +152,7 @@ export async function buildColorPrism(
     }
     // The dead region on a chart is baked to share that chart's own outline, which is where
     // this clip leaves a hairline rather than nothing. See dropUnprintableRemnants.
-    feat = dropSpecks(landedColors, feat, ci, part, c);
+    feat = dropSpecks(landedColors, specks, feat, ci, part);
     if (!feat) return;
     // Only a real clip proves the color reached this face; a cut-through zone counts it when
     // its boolean yields an inlay, below.
@@ -173,7 +168,7 @@ export async function buildColorPrism(
     else if (r.removed && !artworks[ai].reflected)
       noticeBuild(mirrorHalfNotice(design, half.zoneName, half.side));
     // Same boundaries, same failure: the kept-side clip runs along the zone's own centre line.
-    feat = dropSpecks(landedColors, r.feat, ci, part, c);
+    feat = dropSpecks(landedColors, specks, r.feat, ci, part);
     if (!feat) return;
   }
   // A whole-part design is cut only where the net says this zone owns the canvas, or a mark
@@ -192,7 +187,7 @@ export async function buildColorPrism(
     for (const t of r.torn) raiseTornWarning(tornPills, design, [zoneName, t.toName], t.tearMm);
     // The net partition is cut from the same charts, so its patch boundaries coincide with
     // this zone's claim in exactly the way that leaves a hairline.
-    feat = dropSpecks(landedColors, r.feat, ci, part, c);
+    feat = dropSpecks(landedColors, specks, r.feat, ci, part);
     if (!feat) return;
   }
   // A fill is background, so it yields to every sticker on the zone, or differing colors
@@ -201,13 +196,7 @@ export async function buildColorPrism(
   if (under.length) {
     const r = differenceAllChecked(feat, under);
     if (!r.trimmed)
-      warnBuild(
-        fillYieldFailedWarning(
-          regionLabel(c.hex, c.isMerge, c.members.length),
-          artworks[ai].name || 'design',
-          part.name,
-        ),
-      );
+      warnBuild(fillYieldFailedWarning(labels[ci], artworks[ai].name || 'design', part.name));
     if (!r.feat) {
       // Landed for a cut-through part too, which has no clip to have said so: the color is
       // under a sticker, not off the part, and the off-part warning's remedy would be wrong.
@@ -219,7 +208,7 @@ export async function buildColorPrism(
     // tests/fill-yield.test.ts). Unfloored with no boundary: that region still reaches off
     // the part. Exposed before the floor: a color left only a speck still reached this face.
     exposedColors.add(ci);
-    feat = boundaryPoly ? dropSpecks(landedColors, r.feat, ci, part, c) : r.feat;
+    feat = boundaryPoly ? dropSpecks(landedColors, specks, r.feat, ci, part) : r.feat;
     if (!feat) return;
   }
   exposedColors.add(ci);
@@ -231,7 +220,7 @@ export async function buildColorPrism(
   // Bounded by how far the part extends behind its face (unbounded, 20 mm and 9999 mm both
   // exported unwarned on the wheel); resolveCutRegions also bounds each region by its wall.
   const depthSetting = Math.min(raised, mapper.maxCutDepth());
-  const label = regionLabel(c.hex, c.isMerge, c.members.length);
+  const label = labels[ci];
   // One entry per depth, usually one. An edge rule (a hubcap cut to its artwork's shape)
   // splits off full-thickness polygons on the outer wall; the mapper decides, this extrudes.
   const regions = mapper.resolveCutRegions(feat, depthSetting, {
@@ -325,6 +314,6 @@ export async function buildColorPrism(
     // or a conformal warp with no surface under it (usually a baked boundary over-claiming).
     // `continue`, so a color split across two depths keeps the slice that did extrude.
     landedColors.add(ci);
-    warnBuild(`Couldn't cut color ${c.hex} into "${part.name}".`);
+    warnBuild(`Couldn't cut color ${label} into "${part.name}".`);
   }
 }

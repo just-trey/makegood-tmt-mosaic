@@ -46,11 +46,32 @@ export const CUT_FLOOR_MM = 0.05;
 export const depthDiffers = (a: number, b: number): boolean => a.toFixed(2) !== b.toFixed(2);
 
 /**
- * How the color list labels a region. Every depth message must name a row the user can see, and a
- * merged group's row reads "Merged (N)": its dominant hex appears nowhere as text.
+ * How a warning names a region: the way its color row reads, a merged group's "Merged (N)" (its
+ * dominant hex appears nowhere as text) or the filament name beside the hex. The hex stays in the
+ * label: it keeps two colors that round to one filament apart as tally keys. `name` is absent when
+ * the caller has no filament list, and the bare hex is all there is to say.
  */
-export function regionLabel(color: string, isMerge: boolean, memberCount: number): string {
-  return isMerge ? `Merged (${memberCount})` : color;
+export function regionLabel(
+  color: string,
+  isMerge: boolean,
+  memberCount: number,
+  name?: string,
+): string {
+  if (isMerge) return `Merged (${memberCount})`;
+  return name ? `${name} (${color})` : color;
+}
+
+/**
+ * Up to three parts by name, past that a count: the line stays one line however many parts a
+ * color reaches (the chair has nineteen), and the cut-at number it quotes carries what the names
+ * would.
+ */
+export function partsPhrase(names: string[]): string {
+  if (names.length > 3) return `${names.length} parts`;
+  const quoted = names.map((n) => `"${n}"`);
+  return quoted.length < 2
+    ? quoted.join('')
+    : `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1)}`;
 }
 
 /**
@@ -92,26 +113,75 @@ export function addZeroDepthRaise(
   else if (!at.labels.includes(label)) at.labels.push(label);
 }
 
+/** One kind of clamp at one requested depth across every part: a line per part buried the chair's. */
+export interface ClampGroup {
+  requested: number;
+  /** every color clamped at this depth on any part in the group, so not each on each part */
+  labels: string[];
+  /** the part names, each once */
+  partNames: string[];
+  /** the shallowest cut across the group */
+  cutAt: number;
+  cutVaries: boolean;
+  /** the thinnest wall, for thin-wall clamps */
+  wall?: number;
+  wallVaries: boolean;
+}
+
+/** Fold staged clamps into one group per requested depth. */
+export function groupClamps(clamps: Iterable<PartDepthClamp>): ClampGroup[] {
+  const groups = new Map<string, ClampGroup>();
+  for (const c of clamps) {
+    const key = c.requested.toFixed(2);
+    const at = groups.get(key);
+    if (!at) {
+      groups.set(key, {
+        requested: c.requested,
+        labels: [...c.labels],
+        partNames: [c.partName],
+        cutAt: c.cutAt,
+        cutVaries: false,
+        wall: c.wall,
+        wallVaries: false,
+      });
+      continue;
+    }
+    for (const l of c.labels) if (!at.labels.includes(l)) at.labels.push(l);
+    if (!at.partNames.includes(c.partName)) at.partNames.push(c.partName);
+    if (depthDiffers(at.cutAt, c.cutAt)) at.cutVaries = true;
+    at.cutAt = Math.min(at.cutAt, c.cutAt);
+    if (c.wall != null) {
+      if (at.wall != null && depthDiffers(at.wall, c.wall)) at.wallVaries = true;
+      at.wall = at.wall == null ? c.wall : Math.min(at.wall, c.wall);
+    }
+  }
+  return [...groups.values()];
+}
+
+function clampLead(g: ClampGroup): { one: boolean; lead: string; tail: string } {
+  const one = g.labels.length === 1;
+  const which = g.labels.map((l) => `"${l}"`).join(', ');
+  const tail =
+    `${one ? 'It was' : 'They were'} cut ` +
+    (g.cutVaries
+      ? `shallower instead, as little as ${g.cutAt.toFixed(2)} mm.`
+      : `at ${g.cutAt.toFixed(2)} mm instead.`);
+  return {
+    one,
+    lead: `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ${g.requested.toFixed(2)} mm`,
+    tail,
+  };
+}
+
 /**
- * The warning for a depth deeper than the part has material. Names the part: the same setting can
- * be fine on the wheel and clamped on the cap. **Not the wall check**, and worded so it can't read
- * as one (that is thinWallWarning). Groups every color clamped alike on one part
- * (addPartTooDeepClamp).
+ * The warning for a depth deeper than the part has material. Names the parts: the same setting can
+ * be fine on the wheel and clamped on the cap. **Not the wall check** (thinWallWarning). Says what
+ * it cut, not the part's depth: the cut stops CUT_FLOOR_MM short of it, so one figure can't be both.
  */
-export function tooDeepWarning(
-  labels: string[],
-  partName: string,
-  requested: number,
-  cutAt: number,
-): string {
-  const one = labels.length === 1;
-  const which = labels.map((l) => `"${l}"`).join(', ');
-  // Says what it cut, and does not claim that number is the part's face-to-back distance: the cut
-  // stops a floor short of it, so quoting one figure as both was wrong by CUT_FLOOR_MM.
-  return (
-    `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ${requested.toFixed(2)} mm, ` +
-    `deeper than "${partName}" goes. ${one ? 'It was' : 'They were'} cut at ${cutAt.toFixed(2)} mm instead.`
-  );
+export function tooDeepWarning(g: ClampGroup): string {
+  const { lead, tail } = clampLead(g);
+  const goes = g.partNames.length === 1 ? 'goes' : 'go';
+  return `${lead}, deeper than ${partsPhrase(g.partNames)} ${goes}. ${tail}`;
 }
 
 /**
@@ -119,20 +189,11 @@ export function tooDeepWarning(
  * Quotes the wall as well as the cut: the cut stops CUT_FLOOR_MM short of it, or at
  * MIN_CUT_DEPTH_MM over a wall thinner than that, so neither number stands for the other.
  */
-export function thinWallWarning(
-  labels: string[],
-  partName: string,
-  requested: number,
-  cutAt: number,
-  wall: number,
-): string {
-  const one = labels.length === 1;
-  const which = labels.map((l) => `"${l}"`).join(', ');
-  return (
-    `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ${requested.toFixed(2)} mm, ` +
-    `but "${partName}" is only ${wall.toFixed(2)} mm thick under ${one ? 'it' : 'them'}. ` +
-    `${one ? 'It was' : 'They were'} cut at ${cutAt.toFixed(2)} mm instead.`
-  );
+export function thinWallWarning(g: ClampGroup): string {
+  const { one, lead, tail } = clampLead(g);
+  const is = g.partNames.length === 1 ? 'is' : 'are';
+  const thick = `${g.wallVaries ? 'as thin as' : 'only'} ${g.wall!.toFixed(2)} mm${g.wallVaries ? '' : ' thick'}`;
+  return `${lead}, but ${partsPhrase(g.partNames)} ${is} ${thick} under ${one ? 'it' : 'them'}. ${tail}`;
 }
 
 export interface PartDepthClamp {

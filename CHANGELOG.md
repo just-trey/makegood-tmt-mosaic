@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Warnings name a color the way its row does.** They read `Yellow (#f5d020)`
+  beside the "≈ Yellow" row, not a bare `#f5d020`. A merged group is still
+  `Merged (3)`.
+- **The chair no longer piles up one notice per color and part.** Pieces too
+  small to print are one line naming every color, and a depth the parts can't
+  take is one line per kind, naming the parts or counting them past three. The
+  line no longer calls a big backdrop color "detail".
 - **Placement and prime tower notes now show before Export.** "No tower position
   was saved", "past the edge", "overhangs" and the other placement notes arrived
   only after the file downloaded. They now show as soon as the design is built,

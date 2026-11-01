@@ -2,19 +2,18 @@ import type { CrossPartState } from './buildContext';
 import { overlappingDesignPairs, type PlacedDesign } from './designOverlap';
 import { MAX_FILL_TILES, type TileRefusal, type TileRefusalReport } from './patterns';
 import { oppositeSide, type KeepSide } from './zones';
+import { partsPhrase } from './depth';
 import { dismissNotice, warnBuild } from '../warnings';
 
 /**
- * Names detail too fine to print, per colour and part (the pair the user can act on). Says nothing
- * of cause, amount or remainder: three clips can each drop something, and the key dedupes across
- * them first-push-wins, so a remainder claim could outlive a later clip removing the rest. A
- * notice, not a warning: one nozzle square is the floor, so nothing printable went.
+ * Names every color that left a piece too small to print, over all parts in one line. Says nothing
+ * of amount or remainder: three clips can each drop something, and a remainder claim could outlive
+ * a later clip removing the rest. A notice, not a warning: one nozzle square is the floor, so
+ * nothing printable went. A color is named once however many parts it hit.
  */
-export function unprintableSpeckNotice(label: string, partName: string): string {
-  return (
-    `"${label}" has detail on "${partName}" too fine to print, so it wasn't cut. A recess needs ` +
-    `to be about 0.4 mm across to hold a bead.`
-  );
+export function unprintableSpeckNotice(labels: string[], partNames: string[]): string {
+  const which = labels.map((l) => `"${l}"`).join(', ');
+  return `Pieces of ${which} on ${partsPhrase(partNames)} are under about 0.4 mm across, so they weren't cut.`;
 }
 
 /** Rule 1 for `cancelsOut` (regions.ts): one warning per build, counted over every design. */
@@ -23,9 +22,6 @@ export function cancelledOutlinesWarning(n: number): string {
     ? "1 outline crosses over itself and its halves cancel out, so it was left out. Redraw it as separate shapes that don't cross."
     : `${n} outlines cross over themselves and their halves cancel out, so they were left out. Redraw them as separate shapes that don't cross.`;
 }
-
-/** One pill per colour and part, however many of the three clips leave a speck. See Notice.key. */
-export const speckKey = (ci: number, partId: number): string => `speck:${ci}:${partId}`;
 
 /** Rule 1 for the net clip: where the part of a whole-part design this zone gave up is cut. */
 export function netShareNotice(design: string, zone: string, toNames: string[]): string {

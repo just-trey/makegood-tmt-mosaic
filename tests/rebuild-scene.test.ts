@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
+import { getFilaments } from '../src/state/filaments';
 
 /**
  * Drives the real orchestration in rebuild.ts. Only the expensive producer, buildAssemblyGeometry
@@ -1016,6 +1017,32 @@ describe('a part whose shape follows the artwork sees the current placement', ()
     expect(scaleAtRegen).toBe(250);
 
     state.hubcapSilhouette = false;
+  });
+});
+
+describe('the build is handed the owned filaments', () => {
+  it('so the worker names colors as the color list does', async () => {
+    state.assembly.kindId = 'chair-body';
+    state.parsed = parsedSquare();
+    state.assembly.parts = [asmPart()];
+    state.artworks = [
+      {
+        id: 'a1',
+        sourceId: 's1',
+        zone: { partId: 1, zoneId: 'right' },
+        offsetU: 0,
+        offsetV: 0,
+        scalePct: 100,
+        rotationDeg: 0,
+        flipX: false,
+        flipY: false,
+        mode: 'sticker',
+      },
+    ];
+
+    await rebuildCurrent();
+
+    expect(vi.mocked(buildAssemblyGeometry).mock.calls.at(-1)![0].filaments).toBe(getFilaments());
   });
 });
 

@@ -59,7 +59,7 @@ export function warnBuild(message: string, key?: string): void {
 
 /**
  * Build-scoped counterpart to notice(). Takes a `key` like warnBuild: one fact reached from several
- * places states itself once (the clip-remnant notice is raised at three clips and is one thing to the user).
+ * places states itself once.
  */
 export function noticeBuild(message: string, key?: string): void {
   push({ message, level: 'info', build: true, key });

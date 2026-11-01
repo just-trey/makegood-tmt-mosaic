@@ -3,6 +3,9 @@ import {
   MIN_CUT_DEPTH_MM,
   addPartTooDeepClamp,
   depthDiffers,
+  groupClamps,
+  partsPhrase,
+  regionLabel,
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
@@ -81,8 +84,18 @@ describe('depthDiffers', () => {
   });
 });
 
+/** One group, as the build makes it: every clamp staged, then folded. */
+function groupOf(
+  stage: [label: string, part: string, requested: number, cutAt: number, wall?: number][],
+) {
+  const into = new Map<string, PartDepthClamp>();
+  for (const args of stage) addPartTooDeepClamp(into, ...args);
+  return groupClamps(into.values());
+}
+
 describe('tooDeepWarning', () => {
-  const msg = tooDeepWarning(['#ff0000'], 'Wheel top', 9999, 48.45);
+  const [g] = groupOf([['#ff0000', 'Wheel top', 9999, 48.45]]);
+  const msg = tooDeepWarning(g);
 
   it('names the color, the part, and both numbers', () => {
     expect(msg).toContain('"#ff0000"');
@@ -104,11 +117,51 @@ describe('tooDeepWarning', () => {
   });
 
   it('names every color clamped to the same depth on the same part at once', () => {
-    const grouped = tooDeepWarning(['#ff0000', '#00ff00'], 'Wheel top', 9999, 48.45);
-    expect(grouped).toBe(
+    const [grouped] = groupOf([
+      ['#ff0000', 'Wheel top', 9999, 48.45],
+      ['#00ff00', 'Wheel top', 9999, 48.45],
+    ]);
+    expect(tooDeepWarning(grouped)).toBe(
       'Depths for "#ff0000", "#00ff00" were set to 9999.00 mm, deeper than "Wheel top" goes. ' +
         'They were cut at 48.45 mm instead.',
     );
+  });
+
+  it('names up to three parts in one line, with the cut they share', () => {
+    const groups = groupOf([
+      ['#ff0000', 'Wheel top', 9999, 24.25],
+      ['#ff0000', 'Wheel bottom', 9999, 24.25],
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(tooDeepWarning(groups[0])).toBe(
+      'Depth for "#ff0000" was set to 9999.00 mm, deeper than "Wheel top" and "Wheel bottom" go. ' +
+        'It was cut at 24.25 mm instead.',
+    );
+  });
+
+  it('counts past three parts and quotes the shallowest cut', () => {
+    const groups = groupOf(
+      ['A', 'B', 'C', 'D'].map((p, i): [string, string, number, number] => [
+        '#ff0000',
+        p,
+        60,
+        20 - i * 5,
+      ]),
+    );
+    expect(groups).toHaveLength(1);
+    expect(tooDeepWarning(groups[0])).toBe(
+      'Depth for "#ff0000" was set to 60.00 mm, deeper than 4 parts go. ' +
+        'It was cut shallower instead, as little as 5.00 mm.',
+    );
+  });
+
+  it('keeps two requested depths in two lines', () => {
+    expect(
+      groupOf([
+        ['#ff0000', 'A', 60, 3],
+        ['#00ff00', 'A', 50, 3],
+      ]),
+    ).toHaveLength(2);
   });
 });
 
@@ -116,17 +169,82 @@ describe('thinWallWarning', () => {
   // The wall is quoted as well as the cut: the cut stops a floor short of it, so saying the part is
   // "only 2.95 mm thick" would be wrong about the part by that floor.
   it('quotes the wall and the cut as two numbers', () => {
-    expect(thinWallWarning(['#ff0000'], 'Hubcap', 5, 2.95, 3)).toBe(
+    const [g] = groupOf([['#ff0000', 'Hubcap', 5, 2.95, 3]]);
+    expect(thinWallWarning(g)).toBe(
       'Depth for "#ff0000" was set to 5.00 mm, but "Hubcap" is only 3.00 mm thick under it. ' +
         'It was cut at 2.95 mm instead.',
     );
   });
 
   it('names every color clamped to the same depth on the same part at once', () => {
-    expect(thinWallWarning(['#ff0000', 'Merged (2)'], 'Hubcap', 5, 2.95, 3)).toBe(
+    const [g] = groupOf([
+      ['#ff0000', 'Hubcap', 5, 2.95, 3],
+      ['Merged (2)', 'Hubcap', 5, 2.95, 3],
+    ]);
+    expect(thinWallWarning(g)).toBe(
       'Depths for "#ff0000", "Merged (2)" were set to 5.00 mm, but "Hubcap" is only 3.00 mm ' +
         'thick under them. They were cut at 2.95 mm instead.',
     );
+  });
+
+  it('says one part with two walls once, at the thinner', () => {
+    const groups = groupOf([
+      ['#ff0000', 'Hubcap', 5, 2.95, 3],
+      ['#ff0000', 'Hubcap', 5, 1.98, 2.03],
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(thinWallWarning(groups[0])).toBe(
+      'Depth for "#ff0000" was set to 5.00 mm, but "Hubcap" is as thin as 2.03 mm under it. ' +
+        'It was cut shallower instead, as little as 1.98 mm.',
+    );
+  });
+
+  it('counts past three parts and quotes the thinnest wall', () => {
+    const groups = groupOf(
+      ['A', 'B', 'C', 'D'].map((p, i): [string, string, number, number, number] => [
+        '#ff0000',
+        p,
+        60,
+        2 + i,
+        2.05 + i,
+      ]),
+    );
+    expect(thinWallWarning(groups[0])).toBe(
+      'Depth for "#ff0000" was set to 60.00 mm, but 4 parts are as thin as 2.05 mm under it. ' +
+        'It was cut shallower instead, as little as 2.00 mm.',
+    );
+  });
+
+  it('keeps every color named when parts differ in which colors they clamp', () => {
+    const [g] = groupOf([
+      ['#ff0000', 'A', 60, 3, 3.05],
+      ['#00ff00', 'B', 60, 3, 3.05],
+      ['#0000ff', 'C', 60, 3, 3.05],
+    ]);
+    expect(g.labels).toEqual(['#ff0000', '#00ff00', '#0000ff']);
+  });
+});
+
+describe('partsPhrase', () => {
+  it('names one, two or three parts and counts more', () => {
+    expect(partsPhrase(['A'])).toBe('"A"');
+    expect(partsPhrase(['A', 'B'])).toBe('"A" and "B"');
+    expect(partsPhrase(['A', 'B', 'C'])).toBe('"A", "B" and "C"');
+    expect(partsPhrase(['A', 'B', 'C', 'D'])).toBe('4 parts');
+  });
+});
+
+describe('regionLabel', () => {
+  it('reads like the color row: the filament, then the hex that keeps it unique', () => {
+    expect(regionLabel('#f5d020', false, 1, 'Yellow')).toBe('Yellow (#f5d020)');
+  });
+
+  it('names a merged group as its row does, never by its dominant hex', () => {
+    expect(regionLabel('#f5d020', true, 3, 'Yellow')).toBe('Merged (3)');
+  });
+
+  it('falls back to the hex when there is no filament list', () => {
+    expect(regionLabel('#f5d020', false, 1)).toBe('#f5d020');
   });
 });
 
