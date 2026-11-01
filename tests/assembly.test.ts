@@ -1531,8 +1531,38 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
     // nothing while still costing an AMS slot
     expect(r.min).toBeCloseTo(9.8, 4);
     expect(WARNINGS.map((w) => w.message)).toContain(
-      'Depth for "#ff0000" was set to 0.00 mm, which is not a depth that can cut. It was raised to 0.20 mm.',
+      'Depth for "#ff0000" was set to 0.00 mm. Under 0.04 mm is too shallow to print, so it was raised to 0.20 mm.',
     );
+  });
+
+  // Under one fine layer no profile prints the recess, yet it still costs a filament slot.
+  for (const typed of [0.001, 0.03]) {
+    it(`raises ${typed} mm like 0, and says so`, { timeout: 30000 }, async () => {
+      const built = (await buildAssemblyGeometry(
+        baseInput({ colorSettings: { 'asm:#ff0000': { depth: typed } } }),
+      ))!;
+      const r = yRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.max - r.min).toBeCloseTo(0.2, 4);
+      const raised = WARNINGS.filter((w) => w.message.includes('raised to 0.20 mm'));
+      expect(raised.map((w) => w.message)).toEqual([
+        `Depth for "#ff0000" was set to ${typed} mm. Under 0.04 mm is too shallow to print, ` +
+          'so it was raised to 0.20 mm.',
+      ]);
+      expect(raised[0].level).toBe('warn');
+      expect(WARNINGS.filter((w) => w.message.includes('thinner than the usual'))).toEqual([]);
+    });
+  }
+
+  it('honors 0.04 mm, one fine layer, with only the note', { timeout: 30000 }, async () => {
+    const built = (await buildAssemblyGeometry(
+      baseInput({ colorSettings: { 'asm:#ff0000': { depth: 0.04 } } }),
+    ))!;
+    const r = yRange(built.partOutputs[0].inlaySoups[0]);
+    expect(r.max - r.min).toBeCloseTo(0.04, 4);
+    expect(built.palette.find((p) => p.hex === '#ff0000')?.appliedDepth).toBeCloseTo(0.04, 4);
+    expect(WARNINGS.filter((w) => w.message.includes('raised to'))).toEqual([]);
+    const note = WARNINGS.find((w) => w.message.includes('thinner than the usual'));
+    expect(note?.level).toBe('info');
   });
 
   it(
@@ -1541,10 +1571,10 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
     async () => {
       await buildAssemblyGeometry(baseInput({ parsed: threeColorSquaresParsed(), globalDepth: 0 }));
 
-      const zero = WARNINGS.filter((w) => w.message.includes('is not a depth that can cut'));
+      const zero = WARNINGS.filter((w) => w.message.includes('too shallow to print'));
       expect(zero.map((w) => w.message)).toEqual([
-        'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 0.00 mm, which is not a depth ' +
-          'that can cut. They were raised to 0.20 mm.',
+        'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 0.00 mm. Under 0.04 mm is too ' +
+          'shallow to print, so they were raised to 0.20 mm.',
       ]);
       expect(zero[0].level).toBe('warn');
       expect(zero[0].build).toBe(true);
@@ -1565,12 +1595,10 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
     // Asserted on the text, not the pill count: collecting build-wide gives a count of 1 whether
     // or not the labels dedupe, so a count alone passes while the message names each color twice.
     expect(
-      WARNINGS.filter((w) => w.message.includes('is not a depth that can cut')).map(
-        (w) => w.message,
-      ),
+      WARNINGS.filter((w) => w.message.includes('too shallow to print')).map((w) => w.message),
     ).toEqual([
-      'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 0.00 mm, which is not a depth ' +
-        'that can cut. They were raised to 0.20 mm.',
+      'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 0.00 mm. Under 0.04 mm is too ' +
+        'shallow to print, so they were raised to 0.20 mm.',
     ]);
   });
 
@@ -1607,7 +1635,7 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
       const r = yRange(built.partOutputs[0].inlaySoups[0]);
       expect(r.max - r.min).toBeGreaterThan(2.5); // really cut through, not 0.2 mm
       expect(WARNINGS.every((w) => !w.message.includes('was cut at'))).toBe(true);
-      expect(WARNINGS.some((w) => w.message.includes('It was raised to 0.20 mm.'))).toBe(true);
+      expect(WARNINGS.some((w) => w.message.includes('so it was raised to 0.20 mm.'))).toBe(true);
     },
   );
 

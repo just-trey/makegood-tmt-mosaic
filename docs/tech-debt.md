@@ -805,17 +805,6 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 - Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 1, three lenses.
 - **Closing it**: explain or drop one of the two "whole" entries.
 
-## Chair notices pile up, and warnings name colors by hex
-
-- A plain 3-color design on all zones raised 8 "too fine to print" notices, about 3 visible; depth 60
-  raised 17 clamp warnings. The color named is often the big backdrop, so "detail" reads false.
-- Every warning uses hex (`"#f5d020"`) while the row beside it reads "≈ Yellow". Convention 2.
-- Depth fields keep the typed value (0 → `0.00`, 50 → `50.00`) while 0.20 / 2.95 is cut; `0.001` is shown
-  as "0.00 mm", a tolerance-scale number.
-- Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) items 4, 9.
-- **Closing it**: one line per color across parts, as the wheel's clamp warning already groups; color
-  names in warning text; write the applied depth back into the field.
-
 ## Removing a design cannot be undone
 
 - One click on a row's × removes the design, its colors and any merges. Ctrl+Z does nothing; there is no

@@ -553,34 +553,38 @@ put it in, so it prints as bare body.
   fine and the recess will print. The note can't read your slicer settings.
 - **On a standard 0.2 mm profile**, raise the depth to at least 0.2 mm or the
   colour won't appear.
-- Exactly 0 or less is a different case: it cuts nothing at any profile, so it
-  is raised to 0.2 mm and warns rather than being noted.
+- Under 0.04 mm is a different case: no layer height prints it, so it is
+  raised to 0.2 mm and warns rather than being noted.
 - **It won't appear for a colour that only lands on a cut-through part** (the
   wheel's cap), which ignores the depth setting and holes the whole way
   through: the recess prints at any layer height, so the note would predict a
   problem that can't happen. If the same colour is also on a part that cuts to
   depth, the note appears, and it is about that part.
 
-## Troubleshooting: "… is not a depth that can cut" warnings
+## Troubleshooting: "… Under 0.04 mm is too shallow to print, so it was raised to 0.20 mm"
 
-Zero or less cuts no pocket at all, and says nothing about what was wanted. Both
-modes raise it to 0.20 mm, one typical layer, naming every colour they raised
-and both numbers. In assembly mode this used to drop the colour silently: no
-recess, no inlay, no message.
+A depth under 0.04 mm, one fine layer, prints on no profile. 0.04 mm is Bambu
+Studio's minimum layer height for a 0.2 mm nozzle. Both modes raise it to
+0.20 mm, one typical layer, naming every colour they raised and the depth that
+was set. Under 0.04 mm used to cut as typed (0.001 mm sliced to nothing yet cost
+a filament slot), and 0 or less once dropped the colour silently.
 
 - **Nothing is dropped.** The colour cuts, just shallowly. That matters: a
   colour cut nowhere gets no row in the colour list, which would remove the very
   depth field this warning tells you to correct.
+- **The row says it too.** Beside the field: "cuts 0.20 mm", or "raised to
+  0.20 mm" before a build or on a part that cuts through. The field keeps what
+  you typed.
 - **The number is the setting it raised, not what each part cut.** What a part
   does with a depth is up to the part; the wheel's cap holes through whatever
   you set, so no single number is true of every part.
-- To remove the colour, use "→ base" on its row. To cut it, give it a real
-  depth.
+- To remove the colour, use "→ base" on its row. To cut it, give it a depth of
+  0.04 mm or more. Under 0.20 mm still needs a fine layer height (see above).
 - One warning, naming every colour it raised, however many parts they sit on. A
   global **Depth** of 0 raises every row and still says it once. It opens
   `Depth for` with one colour and `Depths for` with several.
 - Two warnings only when two different depths were asked for: 0 on one row and
-  -1 on another are separate facts, and each names its own colours.
+  0.01 on another are separate facts, and each names its own colours.
 - **The deep end is checked separately**, against the part and the wall under
   each colour. See "… deeper than "Wheel top" goes" and "… mm thick under it"
   below. On the chair body only the wall is checked.
@@ -1495,7 +1499,7 @@ design in the same spot is the whole recovery.
 **What it means.** The depth you asked for is more than the part has material
 for, measured from its design face straight back. It was cut at the deepest the
 part can take, a fraction of a millimetre short of breaking out the back. The
-colour's row shows the same number beside its Depth field ("cut at … ").
+colour's row shows the same number beside its Depth field ("cuts … mm").
 
 **One line per requested depth, however many parts.** Full forms: _"Depth for
 \"Red (#c1272d)\" was set to 60.00 mm, deeper than \"Seat\" and \"Back\" go. They
@@ -1553,7 +1557,7 @@ under that colour doesn't. Cut as asked, the pocket would break out the back.
 It was cut 0.05 mm short of the thinnest wall anywhere under the colour instead.
 Over a wall thinner than 0.25 mm it is cut at the 0.20 mm minimum, which still
 reaches the back there. The colour's row in the colour list shows the same
-number ("cut at … ").
+number ("cuts … mm").
 
 - One depth per colour per part. A colour spread over thick and thin spots is
   cut to the thinnest, and the line says "as thin as" instead of "only".

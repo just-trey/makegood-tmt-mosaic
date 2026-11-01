@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Depth fields now say what is cut.** A depth set to 50 on the hubcap reads
+  "cuts 2.95 mm" beside the field, and Default depth gets the same note. A depth
+  under 0.04 mm, one fine layer, is raised to 0.20 mm and warned, like 0. It was
+  cut at 0.001 mm and shown as "0.00", which printed nothing but still took a
+  filament slot.
 - **Warnings name a color the way its row does.** They read `Yellow (#f5d020)`
   beside the "≈ Yellow" row, not a bare `#f5d020`. A merged group is still
   `Merged (3)`.
