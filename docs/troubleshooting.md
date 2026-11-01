@@ -565,7 +565,7 @@ put it in, so it prints as bare body.
 
 A depth under 0.04 mm, one fine layer, prints on no profile. 0.04 mm is Bambu
 Studio's minimum layer height for a 0.2 mm nozzle. The app raises it to
-0.20 mm, one typical layer, naming every colour they raised and the depth that
+0.20 mm, one typical layer, naming every colour it raised and the depth that
 was set. Under 0.04 mm used to cut as typed (0.001 mm sliced to nothing yet cost
 a filament slot), and 0 or less once dropped the colour silently.
 
