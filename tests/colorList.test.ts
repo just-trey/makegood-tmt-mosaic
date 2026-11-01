@@ -793,6 +793,16 @@ describe('depth notes say what is cut', () => {
     );
   });
 
+  it('never calls a raise on a cut-through part a cut in the count', () => {
+    // The wheel at 0.02: the cap holes through (no appliedDepth), the face cuts 0.20.
+    state.globalDepth = 0.02;
+    renderColorList([entry('#ff0000'), entry('#00ff00', { appliedDepth: 0.2 })]);
+
+    expect(defaultNote().textContent).toBe(
+      '2 of 2 colors using it change to another depth, shown on their rows',
+    );
+  });
+
   it('ignores rows with their own depth, and hides when nothing differs', () => {
     state.globalDepth = 2;
     state.colorSettings = { '#ff0000': { depth: 0 } };

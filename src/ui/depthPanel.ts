@@ -45,10 +45,10 @@ function defaultDepthNote({ total, notes }: DefaultDepthNotes): string {
     return `${one ? 'The color' : 'Colors'} using it ${verb} ${first.depth.toFixed(2)} mm`;
   }
   const one = notes.length === 1;
-  return (
-    `${notes.length} of ${total} colors using it ${one ? 'cuts' : 'cut'} another depth, ` +
-    `shown on ${one ? 'its row' : 'their rows'}`
-  );
+  // A raise on a cut-through part is no cut (see depthNote in colorList.ts), so "cut" only when all are.
+  const allCut = notes.every((n) => n.cut);
+  const verb = allCut ? (one ? 'cuts' : 'cut') : one ? 'changes to' : 'change to';
+  return `${notes.length} of ${total} colors using it ${verb} another depth, shown on ${one ? 'its row' : 'their rows'}`;
 }
 
 export function refreshDepthOverrides(
