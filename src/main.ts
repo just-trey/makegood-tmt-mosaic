@@ -16,6 +16,7 @@ import { initDepthPanel } from './ui/depthPanel';
 import { initArtworkPanel } from './ui/artworkPanel';
 import { initExportPanel, lastPlacementRefreshMs } from './ui/exportPanel';
 import { initHelpPanel } from './ui/helpPanel';
+import { initPanelState } from './ui/panelState';
 import { initFeedbackWidget } from './ui/feedbackWidget';
 import { initOverlay } from './ui/overlay';
 import { initConfirmDialog } from './ui/dialogs';
@@ -57,6 +58,8 @@ import { WHOLE_CHAIR_ZONE } from './geometry/zones';
 $('#app-version').textContent =
   `v${getAppVersion(typeof __APP_VERSION__ === 'undefined' ? undefined : __APP_VERSION__)}`;
 
+// First, so the sidebar settles before the viewport and workers spin up.
+initPanelState();
 initViewport($('#canvas-host'));
 initDesignGizmo();
 // Registered after the gizmo so its pointerdown runs first — zonePick relies on that order to tell a gizmo drag from a zone-pick click (isGizmoDragging).
