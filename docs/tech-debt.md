@@ -813,6 +813,8 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
   that fixed it in three moves (6 → 3 colors, 7 → 4 slots); auto-merge left it at 7 slots on every
   setting. Fixed: the warning names Colors when an image design can lose colors, else drag-merge.
   It still sits far from the slider it names.
+- The slider remedy is named whenever an image has over 2 colors, not when lowering it can fit. An SVG
+  with 6 of 7 slots plus a 3-color image still gets "lower Colors". Unmeasured how often.
 - Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) items 7, 8, 18.
 - **Closing it**: pin the Export block; remember `details` state. The slot warning's remedy is done; it still points
   away from where the slider sits.
