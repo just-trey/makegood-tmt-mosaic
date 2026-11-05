@@ -808,7 +808,7 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 ## Export and Colors sit far below the fold
 
 - `#left` is 1436-1905px tall in a 730px pane. 7-color footrest at 1024x768: `#color-list` at 1134px,
-  `#btn-export` at 2089px in a 688px pane. Collapsed panels reopen on reload.
+  `#btn-export` at 2089px in a 688px pane.
 - The 5+ slot warning says to drag color rows together, 1,100px away, and never names the Colors slider
   that fixed it in three moves (6 → 3 colors, 7 → 4 slots); auto-merge left it at 7 slots on every
   setting. Fixed: the warning names Colors when an image design can lose colors, else drag-merge.
@@ -816,7 +816,7 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 - The slider remedy is named whenever an image has over 2 colors, not when lowering it can fit. An SVG
   with 6 of 7 slots plus a 3-color image still gets "lower Colors". Unmeasured how often.
 - Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) items 7, 8, 18.
-- **Closing it**: pin the Export block; remember `details` state. The slot warning's remedy is done; it still points
+- **Closing it**: pin the Export block. The slot warning's remedy is done; it still points
   away from where the slider sits.
 
 ## UI copy uses three names for one thing, and engine words
