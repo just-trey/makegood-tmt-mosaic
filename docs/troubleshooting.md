@@ -348,6 +348,13 @@ warning appears the moment a design needs a fifth slot. Past one unit but within
 the printer's maximum you get a quieter note instead, saying the design prints
 across more units.
 
+Each warning ends with one fix. With an image design that still has colors to
+lose, it says "lower Colors on an image design": the Colors slider on that
+design's row takes the count down in a few moves, and the warning goes once the
+count fits. Otherwise (an SVG, or an image already at 2 colors) it says to drag
+one color row onto another. With several designs, one image that can still lose
+colors is enough to name the slider.
+
 To get the count down:
 
 - **Merge two colours.** Drag one colour row onto another, or use that row's

@@ -52,7 +52,7 @@ import {
 } from '../src/ui/exportPanel';
 import { zoneCoverage } from '../src/state/artwork';
 import { beginWork, endWork } from '../src/app/idle';
-import { refreshSlotBudgetNotice, SLOT_PILL_SUFFIX } from '../src/ui/slotBudget';
+import { refreshSlotBudgetNotice, isSlotPill } from '../src/ui/slotBudget';
 import { getPrinter } from '../src/export/printers';
 import {
   exportBlockedReason,
@@ -175,7 +175,7 @@ function buildWithPalette(n: number): void {
 
 describe('exportPrintReady3MF — filament slot budget', () => {
   const slotNotices = (): { message: string; level: string }[] =>
-    WARNINGS.filter((w) => w.message.endsWith(SLOT_PILL_SUFFIX));
+    WARNINGS.filter((w) => isSlotPill(w.message));
 
   // the tiers themselves are tests/slotBudget.test.ts's job; what matters here is that the export
   // path feeds it the *export's* material count (body + every palette color that actually cut an
@@ -298,7 +298,7 @@ describe('exportPrintReady3MF — palette colors with no inlay on any part', () 
 
     await exportPrintReady3MF();
 
-    expect(WARNINGS.filter((w) => w.message.endsWith(SLOT_PILL_SUFFIX))).toEqual([]);
+    expect(WARNINGS.filter((w) => isSlotPill(w.message))).toEqual([]);
   });
 });
 

@@ -1,6 +1,8 @@
 import { state } from '../state/store';
 import { getPrinter, type Printer } from '../export/printers';
 import { WARNINGS, warn, notice } from '../warnings';
+import { isRasterSource } from '../state/artwork';
+import { MIN_COLORS } from '../raster/quantize';
 
 /**
  * How a slot count sits against the selected printer. Three tiers, not two: one unit is a budget,
@@ -17,16 +19,30 @@ export function slotTier(slotsNeeded: number, printer: Printer): SlotTier {
   return 'fits';
 }
 
-// The primary remedy both tiers end with, and the handle clearSlotBudgetNotices uses to find a
+// The two remedies a pill can end with, and the handle clearSlotBudgetNotices uses to find a
 // posted pill — the clear-before-reporting pattern of PLACEMENT_WARNING_SUFFIXES in exportPanel.ts,
-// pinned by tests/slotBudget.test.ts so a reword can't stop them clearing and stack both tiers.
-// One constant: convention 3 gives each message one primary remedy and it is the same remedy.
-export const SLOT_PILL_SUFFIX = 'drag one color row onto another to merge them.';
+// pinned by tests/slotBudget.test.ts so a reword can't stop them clearing and stack tiers or variants.
+// Each message names exactly one (convention 3); which one depends on what is loaded, see colorsSliderCanHelp.
+export const SLOT_PILL_MERGE = 'drag one color row onto another to merge them.';
+export const SLOT_PILL_SLIDER = 'lower Colors on an image design.';
+export const SLOT_PILL_SUFFIXES = [SLOT_PILL_MERGE, SLOT_PILL_SLIDER];
+
+export function isSlotPill(message: string): boolean {
+  return SLOT_PILL_SUFFIXES.some((s) => message.endsWith(s));
+}
 
 export function clearSlotBudgetNotices(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) {
-    if (WARNINGS[i].message.endsWith(SLOT_PILL_SUFFIX)) WARNINGS.splice(i, 1);
+    if (isSlotPill(WARNINGS[i].message)) WARNINGS.splice(i, 1);
   }
+}
+
+// The Colors slider exists only on an image design, and one already down to MIN_COLORS has nothing
+// left to give. With several designs one image that can still lose colors is enough to name it:
+// the slider is a target count where hand-merging is a hunt through a list that can sit far
+// below the pill, and the mixed case can't tell which design the extra colors came from.
+function colorsSliderCanHelp(): boolean {
+  return state.sources.some((s) => isRasterSource(s) && s.raster.palette.length > MIN_COLORS);
 }
 
 function slotBudgetMessage(
@@ -45,16 +61,17 @@ function slotBudgetMessage(
   // slot is an external spool on its second nozzle, not a chained unit — printers.ts); slotsMax is
   // what it can address in one print, the only phrasing true of all three.
   //
-  // Hand-merging is the primary and auto-merge deliberately unnamed: it walks a similarity
+  // Hand-merging is the fallback and auto-merge deliberately unnamed: it walks a similarity
   // threshold, not a target count, and on the one real 7-color volunteer SVG measured it moved 7
   // slots to 6 only at Strong (AUTO_MERGE_LEVELS in geometry/regions.ts) — the control least likely to work.
+  const remedy = colorsSliderCanHelp() ? SLOT_PILL_SLIDER : SLOT_PILL_MERGE;
   if (tier === 'over-max') {
     return {
       level: 'warn',
       message:
         `${slotsNeeded} filament slots needed, but ${printer.label} tops out at ` +
         `${printer.slotsMax} in a single print. To fit, ` +
-        SLOT_PILL_SUFFIX,
+        remedy,
     };
   }
   if (tier === 'multi-unit') {
@@ -64,7 +81,7 @@ function slotBudgetMessage(
         `${slotsNeeded} filament slots needed, more than the ${printer.slotsPerUnit} in a ` +
         `single ${printer.unitLabel}. ${printer.label} prints up to ${printer.slotsMax} in one ` +
         `print. To fit a single ${printer.unitLabel}, ` +
-        SLOT_PILL_SUFFIX,
+        remedy,
     };
   }
   return null;
