@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeAll, beforeEach, vi } from 'vitest';
 
 // DOM-only: stub the scene/scheduler/analytics side effects so importing the panel doesn't pull
 // in three.js or schedule a real rebuild. state/artwork and raster/parse stay real — the point of
@@ -21,13 +21,14 @@ vi.mock('../src/assembly/kinds', () => ({
   currentDesignScaleContext: () => ({ isRect: true, radius: 138, designFace: () => null }),
 }));
 
-import { renderArtworkList } from '../src/ui/artworkListPanel';
+import { renderArtworkList, wireRemovalUndo } from '../src/ui/artworkListPanel';
 import {
   announceTrace,
   fillClampKey,
   loadArtworkSource,
   setArtworkMirror,
   setArtworkZone,
+  syncActiveArtworkPlacement,
 } from '../src/state/artwork';
 import { state } from '../src/state/store';
 import {
@@ -624,5 +625,251 @@ describe('drop-area filename follows the active design', () => {
     render();
     removeRow(0);
     expect(fname()).toBe('');
+  });
+});
+
+describe('undoing a design removal', () => {
+  const clickRemove = (i: number) =>
+    document
+      .querySelectorAll<HTMLButtonElement>('.artwork-remove')
+      [i].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const undoButton = () => document.querySelector<HTMLButtonElement>('.artwork-undo');
+  const clickUndo = () => undoButton()!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const ctrlZ = (target: EventTarget = document.body) =>
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }),
+    );
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const names = () => state.sources.map((s) => s.name);
+
+  /** Shapes only: the removal prunes color-keyed settings to the fills still loaded. */
+  function loadColored(name: string, ...fills: string[]) {
+    const parsed: ParsedSVG = {
+      shapes: fills.map((fill, order) => ({ fill, loops: [], order })),
+      bbox: { minX: 0, minY: 0, maxX: 10, maxY: 10 },
+      rawSVGCircle: null,
+    };
+    return loadArtworkSource(parsed, name);
+  }
+
+  beforeAll(() => wireRemovalUndo());
+
+  beforeEach(() => {
+    state.colorSettings = {};
+    state.mergeGroups = [];
+    state.keptApart = [];
+    state.baseColorKey = null;
+    state.baseColorMembers = [];
+    state.offsetX = 0;
+    state.offsetY = 0;
+    state.scalePct = 100;
+    state.rotationDeg = 0;
+    state.flipX = false;
+    state.assembly.variantId = null;
+    vi.mocked(scheduleRebuild).mockClear();
+  });
+
+  it('brings back the only design with its merge, base, kept-apart color and depth', () => {
+    const inst = loadColored('only.svg', '#ff0000', '#00ff00', '#0000ff', '#ffff00');
+    const parsed = state.parsed;
+    state.mergeGroups = [['#ff0000', '#00ff00']];
+    state.baseColorMembers = ['#0000ff'];
+    state.baseColorKey = '#0000ff';
+    state.keptApart = ['#ffff00'];
+    state.colorSettings = { '#ffff00': { depth: 2.5 }, 'merge:#ff0000,#00ff00': { depth: 1.2 } };
+    const settings = JSON.parse(JSON.stringify(state.colorSettings));
+    render();
+
+    clickRemove(0);
+    expect(state.sources).toHaveLength(0);
+    expect(state.colorSettings).toEqual({});
+    expect(document.querySelector('#artwork-list')!.textContent).toContain('Removed only.svg.');
+
+    vi.mocked(scheduleRebuild).mockClear();
+    clickUndo();
+
+    expect(names()).toEqual(['only.svg']);
+    expect(state.artworks.map((a) => a.id)).toEqual([inst.id]);
+    expect(state.activeArtworkId).toBe(inst.id);
+    expect(state.parsed).toBe(parsed);
+    expect(state.sources[0].parsed).toBe(parsed);
+    expect(state.colorSettings).toEqual(settings);
+    expect(state.mergeGroups).toEqual([['#ff0000', '#00ff00']]);
+    expect(state.baseColorMembers).toEqual(['#0000ff']);
+    expect(state.baseColorKey).toBe('#0000ff');
+    expect(state.keptApart).toEqual(['#ffff00']);
+    expect(undoButton()).toBeNull();
+    expect(document.querySelector('.artwork-name')!.textContent).toBe('only.svg');
+    expect(scheduleRebuild).toHaveBeenCalled();
+  });
+
+  it('puts one of two back in its place, active, with its placement', () => {
+    const a = loadColored('a.svg', '#ff0000');
+    state.offsetX = 5;
+    state.scalePct = 150;
+    syncActiveArtworkPlacement(); // the build does this before anything reads the instance
+    const b = loadColored('b.svg', '#00ff00');
+    state.offsetX = 12;
+    state.rotationDeg = 30;
+    state.flipX = true;
+    state.colorSettings = { '#00ff00': { depth: 3 } };
+    render();
+
+    // Removing the first row leaves b active, so this checks order.
+    clickRemove(0);
+    expect(names()).toEqual(['b.svg']);
+    clickUndo();
+    expect(state.artworks.map((x) => x.id)).toEqual([a.id, b.id]);
+    expect(state.activeArtworkId).toBe(b.id);
+    expect(state.offsetX).toBe(12);
+    expect(state.rotationDeg).toBe(30);
+    expect(state.flipX).toBe(true);
+
+    // Removing the active one hands the globals to a; undo gives them back to b.
+    clickRemove(1);
+    expect(state.activeArtworkId).toBe(a.id);
+    expect(state.offsetX).toBe(5);
+    clickUndo();
+    expect(state.artworks.map((x) => x.id)).toEqual([a.id, b.id]);
+    expect(state.activeArtworkId).toBe(b.id);
+    expect(state.offsetX).toBe(12);
+    expect(state.rotationDeg).toBe(30);
+    expect(state.colorSettings).toEqual({ '#00ff00': { depth: 3 } });
+  });
+
+  it('is gone after a later edit, and Undo then restores nothing', async () => {
+    loadColored('a.svg', '#ff0000');
+    loadColored('b.svg', '#00ff00');
+    render();
+    clickRemove(0);
+    expect(undoButton()).not.toBeNull();
+
+    state.colorSettings['#00ff00'] = { depth: 4 };
+    document.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(undoButton()).toBeNull();
+
+    ctrlZ();
+    expect(names()).toEqual(['b.svg']);
+    expect(state.colorSettings).toEqual({ '#00ff00': { depth: 4 } });
+  });
+
+  it.each([
+    ['a new design is loaded', () => void loadColored('c.svg', '#123456')],
+    ['the part kind changes', () => void (state.assembly.kindId = 'other-kind')],
+    ['the hardware variant changes', () => void (state.assembly.variantId = 'kit')],
+    ['a merge is made', () => void (state.mergeGroups = [['#00ff00', '#ff00ff']])],
+    ['the design is moved', () => void (state.offsetY += 3)],
+    ['the pool is restored from a session', () => void state.sources.splice(0)],
+  ])('ends the offer when %s', (_what, edit) => {
+    loadColored('a.svg', '#ff0000');
+    loadColored('b.svg', '#00ff00', '#ff00ff');
+    render();
+    clickRemove(0);
+    edit();
+    ctrlZ();
+    expect(names()).not.toContain('a.svg');
+    renderArtworkList();
+    expect(undoButton()).toBeNull();
+  });
+
+  it('puts back the notices the removal dismissed', () => {
+    const source = loadDotSource('capped.png');
+    const lossKey = rasterColorLossKey(source.id);
+    notice(rasterCappedMessage('capped.png'), source.id);
+    notice('"capped.png" lost a color.', lossKey);
+    notice('"capped.png" is a sticker now.', fillClampKey(source.id));
+    render();
+
+    clickRemove(0);
+    expect(WARNINGS).toHaveLength(0);
+    clickUndo();
+
+    expect(WARNINGS.find((w) => w.key === source.id)?.message).toBe(
+      rasterCappedMessage('capped.png'),
+    );
+    expect(WARNINGS.find((w) => w.key === lossKey)?.message).toBe('"capped.png" lost a color.');
+    expect(WARNINGS.find((w) => w.key === fillClampKey(source.id))).toBeDefined();
+  });
+
+  it('leaves a notice alone when the design it names was not the one removed', () => {
+    const a = loadDotSource('a.png');
+    loadDotSource('b.png');
+    notice(rasterCappedMessage('a.png'), a.id);
+    render();
+    clickRemove(1);
+    expect(WARNINGS.some((w) => w.key === a.id)).toBe(true);
+    clickUndo();
+    expect(WARNINGS.filter((w) => w.key === a.id)).toHaveLength(1);
+  });
+
+  it('Ctrl+Z undoes it outside a field, and Cmd+Z too', () => {
+    loadColored('a.svg', '#ff0000');
+    render();
+    clickRemove(0);
+    const e = new KeyboardEvent('keydown', {
+      key: 'z',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(names()).toEqual(['a.svg']);
+  });
+
+  it('Ctrl+Z inside a field is left to the field', () => {
+    loadColored('a.svg', '#ff0000');
+    render();
+    clickRemove(0);
+    for (const tag of ['input', 'textarea', 'select']) {
+      const field = document.body.appendChild(document.createElement(tag));
+      const e = new KeyboardEvent('keydown', {
+        key: 'z',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      field.dispatchEvent(e);
+      expect(e.defaultPrevented).toBe(false);
+      field.remove();
+    }
+    expect(state.sources).toHaveLength(0);
+    expect(undoButton()).not.toBeNull();
+  });
+
+  it('Ctrl+Z with nothing removed does nothing, and Ctrl+Shift+Z is not Undo', () => {
+    loadColored('a.svg', '#ff0000');
+    render();
+    const plain = new KeyboardEvent('keydown', {
+      key: 'z',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(plain);
+    expect(plain.defaultPrevented).toBe(false);
+    clickRemove(0);
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Z',
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(state.sources).toHaveLength(0);
+  });
+
+  it('a second removal replaces the offer: Undo brings back only the latest', () => {
+    loadColored('a.svg', '#ff0000');
+    loadColored('b.svg', '#00ff00');
+    render();
+    clickRemove(0);
+    clickRemove(0);
+    expect(document.querySelector('#artwork-list')!.textContent).toContain('Removed b.svg.');
+    clickUndo();
+    expect(names()).toEqual(['b.svg']);
   });
 });

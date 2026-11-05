@@ -15,7 +15,7 @@ import { parseRasterImage } from '../raster/parse';
 import { DETAIL_DEFAULT } from '../raster/stats';
 import { clearWarnings, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
-import { renderArtworkList, selectArtwork } from './artworkListPanel';
+import { renderArtworkList, selectArtwork, wireRemovalUndo } from './artworkListPanel';
 import { refreshFitInputsFromState, updateOffsetSliderRanges } from './fitPanel';
 import { $, input } from './dom';
 import { track } from '../analytics/track';
@@ -121,6 +121,7 @@ function loadArtworkFile(file: File): void {
 }
 
 export function initArtworkPanel(): void {
+  wireRemovalUndo();
   const dropzone = $('#dropzone');
   dropzone.addEventListener('click', () => input('#svg-input').click());
   input('#svg-input').addEventListener('change', (e) => {
