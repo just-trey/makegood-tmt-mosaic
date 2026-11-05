@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The Export button no longer scrolls out of reach.** It stays pinned at the
+  bottom of the left panel with the line under it, which says why it is off or
+  what the last export saved. On a 7-color footrest at 1024x768 it sat about
+  2,000px down.
 - **The slot warning now points at the fix that works for your design.** With an
   image design that still has colors to lose, it says "lower Colors on an image
   design" instead of sending you to drag color rows together. An SVG, or an
