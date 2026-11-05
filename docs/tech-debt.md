@@ -805,13 +805,6 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 - Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 1, three lenses.
 - **Closing it**: explain or drop one of the two "whole" entries.
 
-## Removing a design cannot be undone
-
-- One click on a row's × removes the design, its colors and any merges. Ctrl+Z does nothing; there is no
-  undo control. Third consecutive cycle.
-- Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 5.
-- **Closing it**: an "Undo" toast for the last removal at minimum; a snapshot stack on the store later.
-
 ## Export and Colors sit far below the fold
 
 - `#left` is 1436-1905px tall in a 730px pane. 7-color footrest at 1024x768: `#color-list` at 1134px,
@@ -922,3 +915,11 @@ count. None of them reaches the print as drawn.
 - **Closing it**: capture the failing assertion by looping `npm run test:coverage` until it fails, then
   fix the cause. If it is the timer, run the test on fake timers as its sibling "terminates a cancelled
   worker that lingers" already does.
+
+## Undo of a design removal can end after the first rebuild on a cut-to-artwork-shape hubcap — unmeasured
+
+- A rebuild writes the offsets there (`hubcapSilhouetteOffset` in [src/app/rebuild.ts](../src/app/rebuild.ts)), and the offsets are in the fingerprint that `removalOffer()` compares ([src/state/artwork.ts](../src/state/artwork.ts)).
+- So the Undo offer can disappear once the rebuild after the removal lands.
+- It fails safe: the offer ends, nothing is overwritten.
+- Not run on a real hubcap, so whether it always happens is unmeasured.
+- **Closing it**: leave offsets out of `editFingerprint()` while `hubcapSilhouetteOffset()` is non-null. Then drive the hubcap with that setting on: remove, wait for the rebuild, check Undo is still offered.

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Removing a design can be undone.** After the × on a design row, a line under
+  the list reads "Removed <name>." with an Undo button; Ctrl+Z (Cmd+Z on a Mac)
+  does the same outside a field. The design comes back with its colors, merges,
+  base color, kept-apart colors, depths, placement and any notice the removal
+  cleared. Any other change ends the offer, so it never overwrites an edit. Only
+  the last removal can be undone.
 - **Help now suggests a coloring-book drawing when a color image traces
   poorly.** Load the black-and-white outline, then paint colors on in your
   slicer.

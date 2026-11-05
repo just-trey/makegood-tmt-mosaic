@@ -12,13 +12,14 @@ import {
   setArtworkMirror,
   setArtworkMode,
   setArtworkZone,
-  fillClampKey,
+  removalOffer,
+  undoRemoval,
 } from '../state/artwork';
 import { WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { fillModeOffered } from '../assembly/kinds';
 import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
 import { DETAIL_MAX, DETAIL_MIN } from '../raster/stats';
-import { rasterCappedMessage, rasterColorLossKey } from '../raster/parse';
+import { rasterColorLossKey } from '../raster/parse';
 import { dismissNotice, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { scheduleRebuild } from '../app/scheduler';
@@ -55,7 +56,8 @@ export function renderArtworkList(): void {
   const active = state.artworks.find((x) => x.id === state.activeArtworkId);
   // Derived here, not written per action: restore and remove both left it stale when each set it themselves.
   $('#svg-fname').textContent = state.sources.find((s) => s.id === active?.sourceId)?.name ?? '';
-  if (!state.artworks.length) {
+  const offer = removalOffer();
+  if (!state.artworks.length && !offer) {
     list.style.display = 'none';
     return;
   }
@@ -212,12 +214,6 @@ export function renderArtworkList(): void {
     row.querySelector<HTMLButtonElement>('.artwork-remove')!.addEventListener('click', (e) => {
       e.stopPropagation();
       removeArtworkInstance(a.id);
-      // A capped/traced notice names its image, so it goes with the last instance, or it points at an unloaded file. One dismiss keyed on the source id removes whichever it holds; the passed text is irrelevant once keyed.
-      if (source && !state.sources.some((s) => s.id === source.id)) {
-        dismissNotice(rasterCappedMessage(source.name), source.id);
-        dismissColorLoss(source.id);
-        dismissNotice('', fillClampKey(source.id));
-      }
       renderWarnings();
       renderArtworkList();
       refreshFitInputsFromState();
@@ -233,6 +229,60 @@ export function renderArtworkList(): void {
       list.appendChild(rasterControls(source));
     }
   });
+  if (offer) list.appendChild(removedLine(offer.name));
+}
+
+function removedLine(name: string): HTMLElement {
+  const line = document.createElement('div');
+  line.className = 'artwork-removed';
+  const text = document.createElement('span');
+  // textContent: the name is a user-supplied filename.
+  text.textContent = `Removed ${name}.`;
+  const undo = document.createElement('button');
+  undo.type = 'button';
+  undo.className = 'btn small artwork-undo';
+  undo.textContent = 'Undo';
+  undo.title = 'Bring the design back, with its colors and settings';
+  undo.addEventListener('click', undoLastRemoval);
+  line.append(text, undo);
+  return line;
+}
+
+function undoLastRemoval(): void {
+  // A refused undo still re-renders: the line was stale and should go.
+  if (undoRemoval()) {
+    renderWarnings();
+    refreshFitInputsFromState();
+    refreshGizmo();
+    scheduleRebuild();
+    track('artwork_removal_undone');
+  }
+  renderArtworkList();
+}
+
+const isEditable = (t: EventTarget | null): boolean =>
+  t instanceof HTMLElement &&
+  (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
+
+/** Ctrl/Cmd+Z for the last removal, and the sweep that takes the line down once a later edit ends the offer. */
+export function wireRemovalUndo(): void {
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return;
+    // A field keeps its own text undo; a modal dialog owns the keystroke.
+    if (isEditable(e.target) || document.querySelector('dialog[open]')) return;
+    if (!removalOffer()) return;
+    e.preventDefault();
+    undoLastRemoval();
+  });
+  // Edits write straight to state with no common hook, so look after each interaction instead.
+  const sweep = (): void => {
+    setTimeout(() => {
+      if (document.querySelector('.artwork-removed') && !removalOffer()) renderArtworkList();
+    }, 0);
+  };
+  for (const type of ['input', 'change', 'click', 'pointerup', 'keyup']) {
+    document.addEventListener(type, sweep, true);
+  }
 }
 
 /**

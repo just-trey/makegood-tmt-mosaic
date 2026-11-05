@@ -41,6 +41,14 @@ row.
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-remove` click handler in `renderArtworkList`.
 - **Props:** none.
 
+### `artwork_removal_undone`
+
+Fired when the user brings a removed design back, by the Undo button or Ctrl/Cmd+Z.
+Not fired when the offer had already ended.
+
+- **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `undoLastRemoval`.
+- **Props:** none.
+
 ### `artwork_instance_added`
 
 Fired when the user places an already-loaded design onto a second zone via a

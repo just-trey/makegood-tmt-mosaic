@@ -686,6 +686,22 @@ input[type='checkbox'] {
   white-space: nowrap;
 }
 
+/* Plain text under the rows, not a row: it offers one thing and is gone with the next edit. */
+.artwork-removed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-row);
+  font-size: var(--text-meta);
+  color: var(--text-dim);
+}
+.artwork-removed span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Colors/Detail for a loaded image. Sits under its row and is indented into it, because these
    belong to the image itself — every placement of it shares them — not to the placement. */
 .artwork-raster {

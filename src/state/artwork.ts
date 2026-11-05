@@ -1,4 +1,11 @@
-import type { ArtworkInstance, DesignSource, ParsedSVG, RasterState, ZoneMirror } from '../types';
+import type {
+  ArtworkInstance,
+  ColorSettings,
+  DesignSource,
+  ParsedSVG,
+  RasterState,
+  ZoneMirror,
+} from '../types';
 import { clearBaseColor, state } from './store';
 import { deltaE, hexToLab } from '../color';
 import {
@@ -16,7 +23,8 @@ import { boundsCentre, netOffsetToZone, WHOLE_CHAIR_ZONE } from '../geometry/zon
 import { currentAssemblyKind, currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
 import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/designScale';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
-import { dismissNotice, notice, warn } from '../warnings';
+import { dismissNotice, notice, noticeBuild, warn, warnBuild, WARNINGS } from '../warnings';
+import type { Notice } from '../warnings';
 
 let nextSourceId = 1;
 let nextArtworkId = 1;
@@ -650,7 +658,7 @@ export function fillClampedNotice(name: string, partName: string, bySetting: boo
 /**
  * One key per design, so a second clamped design is reported instead of colliding with the first.
  * Exported because the notice outlives the design: clampArtworkModes' retraction walks live sources,
- * so after removal nothing matches. artworkListPanel's remove handler retracts it.
+ * so after removal nothing matches. removeArtworkInstance retracts it.
  */
 export const fillClampKey = (sourceId: string): string => `fill-clamped:${sourceId}`;
 
@@ -810,22 +818,150 @@ export function zoneCoverage(): { total: number; covered: number } {
 
 /**
  * Remove one artwork instance (the list's ×). Removing the last instance of a source removes the
- * source (an orphan can't be targeted). Falls back to clearArtwork() when nothing's left so
- * `state.parsed` and the color/merge/base settings reset as before.
+ * source (an orphan can't be targeted) and retracts the notices that name its file. Falls back to
+ * clearArtwork() when nothing's left so `state.parsed` and the color/merge/base settings reset as
+ * before. Leaves a one-slot snapshot for undoRemoval().
  */
 export function removeArtworkInstance(instanceId: string): void {
   const a = state.artworks.find((x) => x.id === instanceId);
   if (!a) return;
+  syncActiveArtworkPlacement(); // the globals are the active instance's newest placement
+  const source = state.sources.find((s) => s.id === a.sourceId);
+  const prior: RemovalSnapshot = {
+    name: source?.name ?? '(missing)',
+    // References, not copies: a removed object is unreachable once filtered out, and a kept one is taken live at restore.
+    sources: state.sources,
+    artworks: state.artworks,
+    activeArtworkId: state.activeArtworkId,
+    parsed: state.parsed,
+    colorSettings: copyColorSettings(state.colorSettings),
+    mergeGroups: state.mergeGroups.map((g) => [...g]),
+    keptApart: [...state.keptApart],
+    baseColorKey: state.baseColorKey,
+    baseColorMembers: [...state.baseColorMembers],
+    placement: placementGlobals(),
+    notices: [],
+    fingerprint: '',
+  };
   state.artworks = state.artworks.filter((x) => x.id !== instanceId);
   const sourceStillUsed = state.artworks.some((x) => x.sourceId === a.sourceId);
   if (!sourceStillUsed) state.sources = state.sources.filter((s) => s.id !== a.sourceId);
 
-  if (!state.artworks.length) {
-    clearArtwork();
-    return;
+  if (!sourceStillUsed && source) {
+    // Capped/traced, dropped-color and fill-clamp notices; the key decides which entry goes, the passed text is irrelevant (warnings.ts).
+    for (const key of [source.id, rasterColorLossKey(source.id), fillClampKey(source.id)]) {
+      for (const w of WARNINGS) if ((w.key ?? w.message) === key) prior.notices.push({ ...w });
+      dismissNotice('', key);
+    }
   }
-  pruneSettingsToPalette(); // the removed source's colors are gone; don't keep settings for them
-  if (state.activeArtworkId === instanceId) setActiveArtwork(state.artworks[0].id);
+
+  if (!state.artworks.length) clearArtwork();
+  else {
+    pruneSettingsToPalette(); // the removed source's colors are gone; don't keep settings for them
+    if (state.activeArtworkId === instanceId) setActiveArtwork(state.artworks[0].id);
+  }
+  prior.fingerprint = editFingerprint();
+  removal = prior;
+}
+
+interface RemovalSnapshot {
+  name: string;
+  sources: DesignSource[];
+  artworks: ArtworkInstance[];
+  activeArtworkId: string | null;
+  parsed: ParsedSVG | null;
+  colorSettings: ColorSettings;
+  mergeGroups: string[][];
+  keptApart: string[];
+  baseColorKey: string | null;
+  baseColorMembers: string[];
+  placement: ReturnType<typeof placementGlobals>;
+  notices: Notice[];
+  /** editFingerprint() right after the removal; the offer stands only while the live one matches. */
+  fingerprint: string;
+}
+
+let removal: RemovalSnapshot | null = null;
+
+const activeSourceId = (r: RemovalSnapshot): string | undefined =>
+  r.artworks.find((x) => x.id === r.activeArtworkId)?.sourceId;
+
+// pruneSettingsToPalette deletes keys on the live object, so a reference would be emptied under the snapshot.
+const copyColorSettings = (cs: ColorSettings): ColorSettings =>
+  Object.fromEntries(Object.entries(cs).map(([k, v]) => [k, { ...v }]));
+
+const placementGlobals = () => ({
+  offsetX: state.offsetX,
+  offsetY: state.offsetY,
+  scalePct: state.scalePct,
+  rotationDeg: state.rotationDeg,
+  flipX: state.flipX,
+  flipY: state.flipY,
+});
+
+/**
+ * Everything a user can change after a removal, as one string. Compared rather than cleared by each
+ * writer: writers are the color list, gizmo, fit sliders, session restore and kind switch, and one
+ * missed call would let Undo overwrite an edit. Left out because the build or a re-trace rewrites
+ * them with no user action: `baseColorKey` (re-derived every rebuild) and a source's parsed
+ * geometry and palette.
+ */
+function editFingerprint(): string {
+  return JSON.stringify([
+    state.sources.map((s) => [s.id, s.name, s.kind, s.raster?.colors, s.raster?.detail]),
+    state.artworks,
+    state.activeArtworkId,
+    state.colorSettings,
+    state.mergeGroups,
+    state.keptApart,
+    state.baseColorMembers,
+    placementGlobals(),
+    state.globalDepth,
+    state.autoMergeLevel,
+    state.printerId,
+    state.asmRadius,
+    state.hubcapDiameterMm,
+    state.hubcapSilhouette,
+    state.baseFilamentId,
+    state.assembly.kindId,
+    state.assembly.variantId,
+    state.assembly.parts.map((p) => [p.id, p.name]),
+  ]);
+}
+
+/** The removal Undo would reverse, or null once anything has changed since (the slot is then dropped). */
+export function removalOffer(): { name: string } | null {
+  if (!removal) return null;
+  if (removal.fingerprint !== editFingerprint()) {
+    removal = null;
+    return null;
+  }
+  return { name: removal.name };
+}
+
+/** Put back exactly what the last removal took. False when there is nothing to undo or an edit has since ended the offer. */
+export function undoRemoval(): boolean {
+  if (!removalOffer()) return false;
+  const r = removal!;
+  removal = null;
+  const liveSources = new Map(state.sources.map((s) => [s.id, s]));
+  const liveArtworks = new Map(state.artworks.map((x) => [x.id, x]));
+  state.sources = r.sources.map((s) => liveSources.get(s.id) ?? s);
+  state.artworks = r.artworks.map((x) => liveArtworks.get(x.id) ?? x);
+  state.activeArtworkId = r.activeArtworkId;
+  // The live source's parse, not the saved one: a re-trace since the removal replaced it and the fingerprint ignores that.
+  state.parsed = state.sources.find((s) => s.id === activeSourceId(r))?.parsed ?? r.parsed;
+  state.colorSettings = r.colorSettings;
+  state.mergeGroups = r.mergeGroups;
+  state.keptApart = r.keptApart;
+  state.baseColorKey = r.baseColorKey;
+  state.baseColorMembers = r.baseColorMembers;
+  Object.assign(state, r.placement);
+  for (const n of r.notices) {
+    if (n.build) (n.level === 'warn' ? warnBuild : noticeBuild)(n.message, n.key);
+    else (n.level === 'warn' ? warn : notice)(n.message, n.key);
+  }
+  return true;
 }
 
 /**
