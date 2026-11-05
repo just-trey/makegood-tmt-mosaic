@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Collapsed sidebar panels stay collapsed after a reload.** Part, Artwork,
+  Artwork fit, Depth, Colors detected and Export each keep the open or closed
+  state you left them in. Start fresh does not reset it, and a browser that
+  blocks storage just opens them all.
 - **Depth fields now say what is cut.** A depth set to 50 on the hubcap reads
   "cuts 2.95 mm" beside the field, and Default depth gets the same note. A depth
   under 0.04 mm, one fine layer, is raised to 0.20 mm and warned, like 0. It was

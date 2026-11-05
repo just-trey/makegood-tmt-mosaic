@@ -808,7 +808,7 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 ## Export and Colors sit far below the fold
 
 - `#left` is 1436-1905px tall in a 730px pane. 7-color footrest at 1024x768: `#color-list` at 1134px,
-  `#btn-export` at 2089px in a 688px pane. Collapsed panels reopen on reload.
+  `#btn-export` at 2089px in a 688px pane.
 - The 5+ slot warning says to drag color rows together, 1,100px away, and never names the Colors slider
   that fixed it in three moves (6 → 3 colors, 7 → 4 slots); auto-merge left it at 7 slots on every
   setting.
