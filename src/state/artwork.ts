@@ -883,6 +883,9 @@ interface RemovalSnapshot {
 
 let removal: RemovalSnapshot | null = null;
 
+const activeSourceId = (r: RemovalSnapshot): string | undefined =>
+  r.artworks.find((x) => x.id === r.activeArtworkId)?.sourceId;
+
 // pruneSettingsToPalette deletes keys on the live object, so a reference would be emptied under the snapshot.
 const copyColorSettings = (cs: ColorSettings): ColorSettings =>
   Object.fromEntries(Object.entries(cs).map(([k, v]) => [k, { ...v }]));
@@ -946,7 +949,8 @@ export function undoRemoval(): boolean {
   state.sources = r.sources.map((s) => liveSources.get(s.id) ?? s);
   state.artworks = r.artworks.map((x) => liveArtworks.get(x.id) ?? x);
   state.activeArtworkId = r.activeArtworkId;
-  state.parsed = r.parsed;
+  // The live source's parse, not the saved one: a re-trace since the removal replaced it and the fingerprint ignores that.
+  state.parsed = state.sources.find((s) => s.id === activeSourceId(r))?.parsed ?? r.parsed;
   state.colorSettings = r.colorSettings;
   state.mergeGroups = r.mergeGroups;
   state.keptApart = r.keptApart;

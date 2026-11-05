@@ -737,6 +737,17 @@ describe('undoing a design removal', () => {
     expect(state.colorSettings).toEqual({ '#00ff00': { depth: 3 } });
   });
 
+  it('keeps a kept design re-traced since the removal', () => {
+    loadColored('a.svg', '#ff0000');
+    loadColored('b.svg', '#00ff00');
+    render();
+    clickRemove(0);
+    const retraced = { ...state.sources[0].parsed };
+    state.sources[0].parsed = retraced;
+    clickUndo();
+    expect(state.parsed).toBe(retraced);
+  });
+
   it('is gone after a later edit, and Undo then restores nothing', async () => {
     loadColored('a.svg', '#ff0000');
     loadColored('b.svg', '#00ff00');
