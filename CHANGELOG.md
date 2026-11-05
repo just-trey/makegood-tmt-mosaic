@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The slot warning now points at the fix that works for your design.** With an
+  image design that still has colors to lose, it says "lower Colors on an image
+  design" instead of sending you to drag color rows together. An SVG, or an
+  image already at 2 colors, still gets the drag. With both kinds loaded it
+  names Colors.
 - **Depth fields now say what is cut.** A depth set to 50 on the hubcap reads
   "cuts 2.95 mm" beside the field, and Default depth gets the same note. A depth
   under 0.04 mm, one fine layer, is raised to 0.20 mm and warned, like 0. It was

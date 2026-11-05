@@ -811,10 +811,11 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
   `#btn-export` at 2089px in a 688px pane. Collapsed panels reopen on reload.
 - The 5+ slot warning says to drag color rows together, 1,100px away, and never names the Colors slider
   that fixed it in three moves (6 → 3 colors, 7 → 4 slots); auto-merge left it at 7 slots on every
-  setting.
+  setting. Fixed: the warning names Colors when an image design can lose colors, else drag-merge.
+  It still sits far from the slider it names.
 - Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) items 7, 8, 18.
-- **Closing it**: pin the Export block; remember `details` state; name the Colors slider in the slot
-  warning.
+- **Closing it**: pin the Export block; remember `details` state. The slot warning's remedy is done; it still points
+  away from where the slider sits.
 
 ## UI copy uses three names for one thing, and engine words
 
