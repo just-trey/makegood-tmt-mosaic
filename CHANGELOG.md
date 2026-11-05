@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The slot warning now points at the fix that works for your design.** With an
+  image design that still has colors to lose, it says "lower Colors on an image
+  design" instead of sending you to drag color rows together. An SVG, or an
+  image already at 2 colors, still gets the drag. With both kinds loaded it
+  names Colors.
 - **Collapsed sidebar panels stay collapsed after a reload.** Part, Artwork,
   Artwork fit, Depth, Colors detected and Export each keep the open or closed
   state you left them in. Start fresh does not reset it, and a browser that

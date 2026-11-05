@@ -57,7 +57,7 @@ apply; this is the term list.
    part.
 3. A warning states one problem and one primary remedy. Alternatives belong in help, not the
    pill. The capacity pill was the worked violation (three remedies across three lines); it now
-   names hand-merging alone and the rest live in the help dialog.
+   names one fix (the Colors slider on an image design, else hand-merging) and the rest live in the help dialog.
 
 ## Explaining itself
 

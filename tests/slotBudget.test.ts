@@ -10,8 +10,16 @@ vi.mock('../src/export/printers', () => ({
   DEFAULT_PRINTER_ID: 'p1',
 }));
 
-import { refreshSlotBudgetNotice, slotTier, SLOT_PILL_SUFFIX } from '../src/ui/slotBudget';
+import {
+  refreshSlotBudgetNotice,
+  slotTier,
+  isSlotPill,
+  SLOT_PILL_MERGE,
+  SLOT_PILL_SLIDER,
+} from '../src/ui/slotBudget';
 import { getPrinter, type Printer } from '../src/export/printers';
+import { state } from '../src/state/store';
+import type { DesignSource } from '../src/types';
 import { WARNINGS, clearWarnings, clearBuildWarnings } from '../src/warnings';
 
 const chaining = {
@@ -28,9 +36,17 @@ const fixed = {
 } as Printer;
 
 const notices = (): { message: string; level: string }[] =>
-  WARNINGS.filter((w) => w.message.endsWith(SLOT_PILL_SUFFIX));
+  WARNINGS.filter((w) => isSlotPill(w.message));
+
+const svgSource = { id: 's1' } as DesignSource;
+const imageSource = (colors: number) =>
+  ({
+    id: 'r1',
+    raster: { palette: Array.from({ length: colors }, () => '#000000') },
+  }) as unknown as DesignSource;
 
 beforeEach(() => {
+  state.sources = [];
   clearWarnings();
   vi.mocked(getPrinter).mockReturnValue(chaining);
   // module-level "what's posted" state carries across tests; a no-design refresh resets it through
@@ -160,7 +176,7 @@ describe('refreshSlotBudgetNotice', () => {
       // The length check is the half that catches the stacking regression: a suffix that stopped
       // matching would leave the previous tier's pill posted alongside the new one.
       expect(notices()).toHaveLength(1);
-      expect(notices()[0].message.endsWith(SLOT_PILL_SUFFIX)).toBe(true);
+      expect(isSlotPill(notices()[0].message)).toBe(true);
     }
   });
 });
@@ -205,5 +221,61 @@ describe('refreshSlotBudgetNotice — dismissal', () => {
     refreshSlotBudgetNotice(5); // and over again: worth saying afresh
 
     expect(notices()).toHaveLength(1);
+  });
+});
+
+describe('refreshSlotBudgetNotice — which remedy it names', () => {
+  it('names the Colors slider when an image design can still lose colors', () => {
+    state.sources = [imageSource(6)];
+
+    refreshSlotBudgetNotice(7);
+
+    expect(notices()).toHaveLength(1);
+    expect(notices()[0].message.endsWith(SLOT_PILL_SLIDER)).toBe(true);
+  });
+
+  it('names hand-merging for an SVG-only design, which has no Colors slider', () => {
+    state.sources = [svgSource];
+
+    refreshSlotBudgetNotice(7);
+
+    expect(notices()[0].message.endsWith(SLOT_PILL_MERGE)).toBe(true);
+  });
+
+  it('names hand-merging when the image is already down to the slider minimum', () => {
+    state.sources = [imageSource(2)];
+
+    refreshSlotBudgetNotice(7);
+
+    expect(notices()[0].message.endsWith(SLOT_PILL_MERGE)).toBe(true);
+  });
+
+  it('names the slider in a mix of SVG and image designs', () => {
+    state.sources = [svgSource, imageSource(5)];
+
+    refreshSlotBudgetNotice(7);
+
+    expect(notices()[0].message.endsWith(SLOT_PILL_SLIDER)).toBe(true);
+  });
+
+  it('swaps the remedy in place when the design changes, never stacking both', () => {
+    state.sources = [imageSource(6)];
+    refreshSlotBudgetNotice(7);
+    state.sources = [svgSource];
+    refreshSlotBudgetNotice(7);
+
+    expect(notices()).toHaveLength(1);
+    expect(notices()[0].message.endsWith(SLOT_PILL_MERGE)).toBe(true);
+  });
+
+  it('re-posts one pill with the printer’s numbers when the printer changes', () => {
+    state.sources = [imageSource(6)];
+    refreshSlotBudgetNotice(7);
+    vi.mocked(getPrinter).mockReturnValue(fixed);
+    refreshSlotBudgetNotice(7);
+
+    expect(notices()).toHaveLength(1);
+    expect(notices()[0].message).toContain('tops out at 4');
+    expect(notices()[0].message.endsWith(SLOT_PILL_SLIDER)).toBe(true);
   });
 });
