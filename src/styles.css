@@ -324,6 +324,21 @@ header .stat {
   overflow-y: auto;
   padding: var(--space-section);
 }
+/* Pinned so Export and the reason it is off stay in view however far #left is scrolled. Negative
+   margins pull it over #left's padding so panels never show through the gutters or underneath. */
+.export-bar {
+  position: sticky;
+  bottom: calc(-1 * var(--space-section));
+  z-index: 1;
+  margin: var(--space-section) calc(-1 * var(--space-section)) calc(-1 * var(--space-section));
+  padding: var(--space-row) var(--space-section) var(--space-section);
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+.export-bar .hint {
+  font-size: var(--text-label);
+  margin-top: var(--space-tight);
+}
 #right {
   position: relative;
   background: var(--viewport);

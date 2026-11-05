@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The Export button no longer scrolls out of reach.** It stays pinned at the
+  bottom of the left panel with the line under it, which says why it is off or
+  what the last export saved. On a 7-color footrest at 1024x768 it sat about
+  2,000px down.
 - **Depth fields now say what is cut.** A depth set to 50 on the hubcap reads
   "cuts 2.95 mm" beside the field, and Default depth gets the same note. A depth
   under 0.04 mm, one fine layer, is raised to 0.20 mm and warned, like 0. It was
