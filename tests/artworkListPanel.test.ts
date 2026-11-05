@@ -760,6 +760,8 @@ describe('undoing a design removal', () => {
     ['the hardware variant changes', () => void (state.assembly.variantId = 'kit')],
     ['a merge is made', () => void (state.mergeGroups = [['#00ff00', '#ff00ff']])],
     ['the design is moved', () => void (state.offsetY += 3)],
+    ['a remaining placement is retargeted', () => void (state.artworks[0].mirror = true)],
+    ['a remaining design switches to Fill', () => void (state.artworks[0].mode = 'fill')],
     ['the pool is restored from a session', () => void state.sources.splice(0)],
   ])('ends the offer when %s', (_what, edit) => {
     loadColored('a.svg', '#ff0000');

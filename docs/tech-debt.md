@@ -805,13 +805,6 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 - Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 1, three lenses.
 - **Closing it**: explain or drop one of the two "whole" entries.
 
-## Removing a design cannot be undone
-
-- One click on a row's × removes the design, its colors and any merges. Ctrl+Z does nothing; there is no
-  undo control. Third consecutive cycle.
-- Observation: [2026-10-06 beta](review-cycles/2026-10-06-beta.md) item 5.
-- **Closing it**: an "Undo" toast for the last removal at minimum; a snapshot stack on the store later.
-
 ## Export and Colors sit far below the fold
 
 - `#left` is 1436-1905px tall in a 730px pane. 7-color footrest at 1024x768: `#color-list` at 1134px,

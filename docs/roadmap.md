@@ -117,7 +117,7 @@ Open questions with no obvious answer, where the measurement behind the question
   Cheapest fix is a camera turn on bind. Surface-first picking (above) is the fuller answer, but this
   doesn't need to wait for it.
 - Power-user tooling for repeat volunteers, all independently raised by the maker-workflow review
-  (2026-08-02): undo/redo over color merges, base assignment, depth and placement; keyboard shortcuts
+  (2026-08-02): undo/redo over color merges, base assignment, depth and placement (only the last design removal is undoable so far); keyboard shortcuts
   (`Ctrl/Cmd+E` to export, at minimum); batch export across variants and printers (Standard/Kit × three
   printer profiles is six manual passes today); a project save/load file so one volunteer can hand a
   design to another (distinct from session autosave, which recovers _your_ session; asked for on the
